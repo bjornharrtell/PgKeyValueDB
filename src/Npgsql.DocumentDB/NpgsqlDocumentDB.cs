@@ -27,6 +27,16 @@ public class NpgsqlDocumentDB
         cmd.ExecuteNonQuery();
     }
 
+    public bool Remove(string key)
+    {
+        using var conn = dataSource.OpenConnection();
+        using var cmd = new NpgsqlCommand("delete from kv where key = $1", conn)
+        {
+            Parameters = { new() { Value = key }, new() { Value = key } }
+        };
+        return cmd.ExecuteNonQuery() > 0;
+    }
+
     public T? Get<T>(string key)
     {
         using var conn = dataSource.OpenConnection();
