@@ -24,6 +24,7 @@ public class NpgsqlDocumentDB
         {
             Parameters = { new() { Value = key }, new() { Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb } }
         };
+        cmd.Prepare();
         cmd.ExecuteNonQuery();
     }
 
@@ -34,6 +35,7 @@ public class NpgsqlDocumentDB
         {
             Parameters = { new() { Value = key }, new() { Value = key } }
         };
+        cmd.Prepare();
         return cmd.ExecuteNonQuery() > 0;
     }
 
@@ -44,6 +46,7 @@ public class NpgsqlDocumentDB
         {
             Parameters = { new() { Value = key } }
         };
+        cmd.Prepare();
         using var reader = cmd.ExecuteReader();
         if (!reader.Read())
             return default;
