@@ -23,6 +23,7 @@ The `NpgsqlDocumentDB` instance offers basic API to do `Set`, `Get` and `Remove`
 
 ## FAQ
 
-Q: What about distributed/concurrent usage?
-A: Should be no different from standard PostgreSQL behaviour i.e https://www.postgresql.org/docs/current/transaction-iso.html.
+### What about distributed/concurrent usage?
+
+Should be no different from standard PostgreSQL behaviour i.e https://www.postgresql.org/docs/current/transaction-iso.html.
 Note that default isolation level can be set in connection string with fx `Options=-c default_transaction_isolation=serializable`.
