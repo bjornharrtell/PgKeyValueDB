@@ -18,7 +18,7 @@ public class NpgsqlDocumentDB
     }
 
     private static NpgsqlCommand CreateSetCommand<T>(NpgsqlConnection conn, string key, T value) =>
-        new("insert into kv (key, value) values ($1, $2)", conn) {
+        new("insert into kv (key, value) values ($1, $2) on conflict (key) do update set value = $2", conn) {
             Parameters = { new() { Value = key }, new() { Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb } }
         };
 
