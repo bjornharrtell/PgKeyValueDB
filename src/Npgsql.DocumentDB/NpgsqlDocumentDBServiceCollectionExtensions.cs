@@ -24,7 +24,7 @@ public class NpgsqlDocumentDBBuilder(string connectionString, object? serviceKey
 
     public string TableName { get; set; } = DEFAULT_TABLE_NAME;
 
-    string CreateTableName() => serviceKey != null ? TableName : $"{TableName}_{serviceKey}";
+    string CreateTableName() => serviceKey == null ? TableName : $"{TableName}_{serviceKey}";
 
     internal object Build()
     {
