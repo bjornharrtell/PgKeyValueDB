@@ -13,8 +13,12 @@ public class NpgsqlDocumentDBTest(NpgsqlDocumentDB kv)
         kv.Set(key, new Poco { Value = key });
         var poco = kv.Get<Poco>(key);
         Assert.Equal(key, poco?.Value);
+        var count1 = kv.Count();
+        Assert.Equal(1, count1);
         var result = kv.Remove(key);
         Assert.True(result);
+        var count2 = kv.Count();
+        Assert.Equal(0, count2);
     }
     
     [Fact]

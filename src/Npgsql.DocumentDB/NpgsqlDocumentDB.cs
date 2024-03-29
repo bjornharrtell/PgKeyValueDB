@@ -122,4 +122,31 @@ public class NpgsqlDocumentDB
         var value = reader.GetBoolean(0);
         return value;
     }
+
+    private NpgsqlCommand CreateCountCommand(NpgsqlConnection conn, string pid) =>
+        new($"select count(1) from {tableName} where pid = $1", conn) {
+            Parameters = { new() { Value = pid } }
+        };
+
+    public long Count(string pid = "default")
+    {
+        using var conn = dataSource.OpenConnection();
+        using var cmd = CreateCountCommand(conn, pid);
+        cmd.Prepare();
+        using var reader = cmd.ExecuteReader();
+        reader.Read();
+        var value = reader.GetInt64(0);
+        return value;
+    }
+
+    public async Task<long> CountAsync(string pid = "default")
+    {
+        using var conn = await dataSource.OpenConnectionAsync();
+        using var cmd = CreateCountCommand(conn, pid);
+        await cmd.PrepareAsync();
+        using var reader = await cmd.ExecuteReaderAsync();
+        await reader.ReadAsync();
+        var value = reader.GetInt64(0);
+        return value;
+    }
 }
