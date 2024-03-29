@@ -4,70 +4,80 @@ namespace Npgsql.DocumentDB;
 
 public class NpgsqlDocumentDB
 {
-    readonly NpgsqlDataSource dataSource; 
+    readonly NpgsqlDataSource dataSource;
+    readonly string tableName;
+
+    const string DEFAULT_TABLE_NAME = "npgsql_documentdb";
 
     public NpgsqlDocumentDB(NpgsqlDataSource dataSource)
     {
         this.dataSource = dataSource;
+        this.tableName = DEFAULT_TABLE_NAME;
         Init();
     }
 
     private void Init()
     {
-        dataSource.CreateCommand("create table if not exists kv (key text primary key check (char_length(key) <= 255), value jsonb not null)").ExecuteNonQuery();
+        dataSource.CreateCommand($@"create table if not exists {tableName} (
+    pid text check (char_length(id) between 1 and 255),
+    id text check (char_length(id) between 1 and 255),
+    value jsonb not null,
+    primary key (pid, id)
+)")
+            .ExecuteNonQuery();
     }
 
-    private static NpgsqlCommand CreateSetCommand<T>(NpgsqlConnection conn, string key, T value) =>
-        new("insert into kv (key, value) values ($1, $2) on conflict (key) do update set value = $2", conn) {
-            Parameters = { new() { Value = key }, new() { Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb } }
+    private NpgsqlCommand CreateSetCommand<T>(NpgsqlConnection conn, string pid, string id, T value) =>
+        new($"insert into {tableName} (pid, id, value) values ($1, $2, $3) on conflict (pid, id) do update set value = $3", conn) {
+            Parameters = { new() { Value = pid }, new() { Value = id }, new() { Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb } }
         };
 
-    public void Set<T>(string key, T value)
+    public void Set<T>(string id, T value, string pid = "default")
     {
         using var conn = dataSource.OpenConnection();
-        using var cmd = CreateSetCommand(conn, key, value);
+        using var cmd = CreateSetCommand(conn, pid, id, value);
         cmd.Prepare();
         cmd.ExecuteNonQuery();
     }
 
-    public async Task SetAsync<T>(string key, T value)
+    public async Task SetAsync<T>(string id, T value, string pid = "default")
     {
         using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateSetCommand(conn, key, value);
+        using var cmd = CreateSetCommand(conn, pid, id, value);
         await cmd.PrepareAsync();
         await cmd.ExecuteNonQueryAsync();
     }
 
-    private static NpgsqlCommand CreateRemoveCommand(NpgsqlConnection conn, string key) =>
-        new("delete from kv where key = $1", conn) {
-            Parameters = { new() { Value = key }, new() { Value = key } }
+    private NpgsqlCommand CreateRemoveCommand(NpgsqlConnection conn, string pid, string id) =>
+        new($"delete from {tableName} where pid = $1 and id = $2", conn) {
+            Parameters = { new() { Value = pid }, new() { Value = id } }
         };
 
-    public bool Remove(string key)
+    public bool Remove(string id, string pid = "default")
     {
         using var conn = dataSource.OpenConnection();
-        using var cmd = CreateRemoveCommand(conn, key);
+        using var cmd = CreateRemoveCommand(conn, pid, id);
         cmd.Prepare();
         return cmd.ExecuteNonQuery() > 0;
     }
 
-    public async Task<bool> RemoveAsync(string key)
+    public async Task<bool> RemoveAsync(string id, string pid = "default")
     {
         using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateRemoveCommand(conn, key);
+        using var cmd = CreateRemoveCommand(conn, pid, id);
         await cmd.PrepareAsync();
         return await cmd.ExecuteNonQueryAsync() > 0;
     }
 
-    private static NpgsqlCommand CreateGetCommand(NpgsqlConnection conn, string key) =>
-        new("select value from kv where key = $1", conn) {
-            Parameters = { new() { Value = key } }
+    private NpgsqlCommand CreateGetCommand(NpgsqlConnection conn, string pid, string id) =>
+        new($"select value from {tableName} where pid = $1 and id = $2", conn) {
+            Parameters = { new() { Value = pid }, new() { Value = id } }
         };
 
-    public T? Get<T>(string key)
+    public T? Get<T>(string id, string pid = "default")
     {
         using var conn = dataSource.OpenConnection();
-        using var cmd = CreateGetCommand(conn, key);
+        using var cmd = CreateGetCommand(conn, pid, id);
         cmd.Prepare();
         using var reader = cmd.ExecuteReader();
         if (!reader.Read())
@@ -76,10 +86,10 @@ public class NpgsqlDocumentDB
         return value;
     }
 
-    public async Task<T?> GetAsync<T>(string key)
+    public async Task<T?> GetAsync<T>(string id, string pid = "default")
     {
         using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateGetCommand(conn, key);
+        using var cmd = CreateGetCommand(conn, pid, id);
         await cmd.PrepareAsync();
         using var reader = await cmd.ExecuteReaderAsync();
         if (!await reader.ReadAsync())
@@ -88,15 +98,15 @@ public class NpgsqlDocumentDB
         return value;
     }
 
-    private static NpgsqlCommand CreateExistsCommand(NpgsqlConnection conn, string key) =>
-        new("select exists(select 1 from kv where key = $1)", conn) {
-            Parameters = { new() { Value = key } }
+    private NpgsqlCommand CreateExistsCommand(NpgsqlConnection conn, string pid, string id) =>
+        new($"select exists(select 1 from {tableName} where pid = $1 and id = $2)", conn) {
+            Parameters = { new() { Value = pid }, new() { Value = id } }
         };
 
-    public bool Exists(string key)
+    public bool Exists(string id, string pid = "default")
     {
         using var conn = dataSource.OpenConnection();
-        using var cmd = CreateExistsCommand(conn, key);
+        using var cmd = CreateExistsCommand(conn, pid, id);
         cmd.Prepare();
         using var reader = cmd.ExecuteReader();
         reader.Read();
@@ -104,10 +114,10 @@ public class NpgsqlDocumentDB
         return value;
     }
 
-    public async Task<bool> ExistsAsync(string key)
+    public async Task<bool> ExistsAsync(string id, string pid = "default")
     {
         using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateExistsCommand(conn, key);
+        using var cmd = CreateExistsCommand(conn, pid, id);
         await cmd.PrepareAsync();
         using var reader = await cmd.ExecuteReaderAsync();
         await reader.ReadAsync();

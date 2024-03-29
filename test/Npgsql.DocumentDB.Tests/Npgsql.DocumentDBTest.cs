@@ -32,15 +32,4 @@ public class NpgsqlDocumentDBTest(NpgsqlDocumentDB kv)
         var result = kv.Remove(key);
         Assert.False(result);
     }
-
-    [Fact]
-    public void DuplicateKeyTest()
-    {
-        var key = nameof(DuplicateKeyTest);
-        kv.Set(key, new Poco { Value = key });
-        var ex = Assert.Throws<PostgresException>(() => {
-            kv.Set(key, new Poco { Value = key });
-        });
-        Assert.Equal("23505", ex.SqlState);
-    }
 }
