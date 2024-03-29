@@ -11,8 +11,7 @@ public class Startup : IDisposable
     {
         pg = new PgServer("16.2.0", clearWorkingDirOnStart: true, clearInstanceDirOnStop: true);
         pg.Start();
-        services.AddNpgsqlDataSource($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres", a => a.EnableDynamicJson());
-        services.AddSingleton<NpgsqlDocumentDB>();
+        services.AddNpgsqlDocumentDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres");
     }
 
     public void Dispose()

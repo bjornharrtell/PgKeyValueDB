@@ -7,12 +7,10 @@ public class NpgsqlDocumentDB
     readonly NpgsqlDataSource dataSource;
     readonly string tableName;
 
-    const string DEFAULT_TABLE_NAME = "npgsql_documentdb";
-
-    public NpgsqlDocumentDB(NpgsqlDataSource dataSource)
+    public NpgsqlDocumentDB(NpgsqlDataSource dataSource, string tableName)
     {
         this.dataSource = dataSource;
-        this.tableName = DEFAULT_TABLE_NAME;
+        this.tableName = tableName;
         Init();
     }
 
