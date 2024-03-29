@@ -10,7 +10,7 @@ public static class NpgsqlServiceCollectionExtensions
     {
         serviceCollection.TryAdd(new ServiceDescriptor(typeof(NpgsqlDocumentDB), serviceKey, delegate (IServiceProvider sp, object? key)
         {
-            NpgsqlDocumentDBBuilder builder = new(connectionString, serviceKey);
+            NpgsqlDocumentDBBuilder builder = new(connectionString, key);
             action?.Invoke(builder);
             return builder.Build();
         }, dataSourceLifetime));
