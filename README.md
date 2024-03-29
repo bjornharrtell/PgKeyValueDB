@@ -13,8 +13,7 @@ It's recommended to use [.NET Dependency Injection](https://www.nuget.org/packag
 and setup via your Startup class like this:
 
 ```csharp
-services.AddNpgsqlDataSource(connectionString, a => a.EnableDynamicJson());
-services.AddSingleton<NpgsqlDocumentDB>();
+services.AddNpgsqlDocumentDB(connectionString);
 ```
 
 You can then inject `NpgsqlDocumentDB` as constructor parameter where you need it.
