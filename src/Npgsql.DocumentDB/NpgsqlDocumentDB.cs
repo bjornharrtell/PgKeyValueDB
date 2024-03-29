@@ -96,6 +96,35 @@ public class NpgsqlDocumentDB
         return value;
     }
 
+    private NpgsqlCommand CreateGetSetCommand(NpgsqlConnection conn, string pid, long limit) =>
+        new($"select value from {tableName} where pid = $1 limit $2", conn) {
+            Parameters = { new() { Value = pid }, new() { Value = limit } }
+        };
+    
+    public HashSet<T> GetSet<T>(string pid = "default", long limit = 0)
+    {
+        using var conn = dataSource.OpenConnection();
+        using var cmd = CreateGetSetCommand(conn, pid, limit);
+        cmd.Prepare();
+        using var reader = cmd.ExecuteReader();
+        var set = new HashSet<T>();
+        while (reader.Read())
+            set.Add(reader.GetFieldValue<T>(0));
+        return set;
+    }
+
+    public async Task<HashSet<T>> GetSetAsync<T>(string pid = "default", long limit = 0)
+    {
+        using var conn = await dataSource.OpenConnectionAsync();
+        using var cmd = CreateGetSetCommand(conn, pid, limit);
+        await cmd.PrepareAsync();
+        using var reader = await cmd.ExecuteReaderAsync();
+        var set = new HashSet<T>();
+        while (await reader.ReadAsync())
+            set.Add(await reader.GetFieldValueAsync<T>(0));
+        return set;
+    }
+
     private NpgsqlCommand CreateExistsCommand(NpgsqlConnection conn, string pid, string id) =>
         new($"select exists(select 1 from {tableName} where pid = $1 and id = $2)", conn) {
             Parameters = { new() { Value = pid }, new() { Value = id } }
