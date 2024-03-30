@@ -44,6 +44,6 @@ public class PgKeyValueDBTest(PgKeyValueDB kv)
         var key = nameof(BasicTest);
         kv.Set(key, new Poco { Value = key });
         var result = kv.RemoveAll();
-        Assert.True(result);
+        Assert.Equal(1, result);
     }
 }

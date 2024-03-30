@@ -76,20 +76,20 @@ public class PgKeyValueDB
             Parameters = { new() { Value = pid } }
         };
 
-    public bool RemoveAll(string pid = "default")
+    public int RemoveAll(string pid = "default")
     {
         using var conn = dataSource.OpenConnection();
         using var cmd = CreateRemoveAllCommand(conn, pid);
         cmd.Prepare();
-        return cmd.ExecuteNonQuery() > 0;
+        return cmd.ExecuteNonQuery();
     }
 
-    public async Task<bool> RemoveAllAsync(string pid = "default")
+    public async Task<int> RemoveAllAsync(string pid = "default")
     {
         using var conn = await dataSource.OpenConnectionAsync();
         using var cmd = CreateRemoveAllCommand(conn, pid);
         await cmd.PrepareAsync();
-        return await cmd.ExecuteNonQueryAsync() > 0;
+        return await cmd.ExecuteNonQueryAsync();
     }
 
     private NpgsqlCommand CreateGetCommand(NpgsqlConnection conn, string pid, string id) =>
