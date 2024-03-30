@@ -70,6 +70,28 @@ public class PgKeyValueDB
         return await cmd.ExecuteNonQueryAsync() > 0;
     }
 
+    private NpgsqlCommand CreateRemoveAllCommand(NpgsqlConnection conn, string pid) =>
+        new($"delete from {tableName} where pid = $1", conn)
+        {
+            Parameters = { new() { Value = pid } }
+        };
+
+    public bool RemoveAll(string pid = "default")
+    {
+        using var conn = dataSource.OpenConnection();
+        using var cmd = CreateRemoveAllCommand(conn, pid);
+        cmd.Prepare();
+        return cmd.ExecuteNonQuery() > 0;
+    }
+
+    public async Task<bool> RemoveAllAsync(string pid = "default")
+    {
+        using var conn = await dataSource.OpenConnectionAsync();
+        using var cmd = CreateRemoveAllCommand(conn, pid);
+        await cmd.PrepareAsync();
+        return await cmd.ExecuteNonQueryAsync() > 0;
+    }
+
     private NpgsqlCommand CreateGetCommand(NpgsqlConnection conn, string pid, string id) =>
         new($"select value from {tableName} where pid = $1 and id = $2", conn)
         {

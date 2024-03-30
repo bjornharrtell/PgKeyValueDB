@@ -37,4 +37,13 @@ public class PgKeyValueDBTest(PgKeyValueDB kv)
         var result = kv.Remove(key);
         Assert.False(result);
     }
+
+    [Fact]
+    public void RemoveAllTest()
+    {
+        var key = nameof(BasicTest);
+        kv.Set(key, new Poco { Value = key });
+        var result = kv.RemoveAll();
+        Assert.True(result);
+    }
 }
