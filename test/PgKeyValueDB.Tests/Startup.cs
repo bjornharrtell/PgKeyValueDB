@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using MysticMind.PostgresEmbed;
 
-namespace Npgsql.DocumentDB.Tests;
+namespace Wololo.PgKeyValueDB.Tests;
 
 public class Startup : IDisposable
 {
@@ -11,7 +11,7 @@ public class Startup : IDisposable
     {
         pg = new PgServer("16.2.0", clearWorkingDirOnStart: true, clearInstanceDirOnStop: true);
         pg.Start();
-        services.AddNpgsqlDocumentDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres");
+        services.AddPgKeyValueDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres");
     }
 
     public void Dispose()

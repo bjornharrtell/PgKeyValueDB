@@ -1,4 +1,4 @@
-# Npgsql.DocumentDB
+# PgKeyValueDB
 
 ## Introduction
 
@@ -13,12 +13,12 @@ It's recommended to use [.NET Dependency Injection](https://www.nuget.org/packag
 and setup via your Startup class like this:
 
 ```csharp
-services.AddNpgsqlDocumentDB(connectionString);
+services.AddPgKeyValueDB(connectionString);
 ```
 
-You can then inject `NpgsqlDocumentDB` as constructor parameter where you need it.
+You can then inject `PgKeyValueDB` as constructor parameter where you need it.
 
-The `NpgsqlDocumentDB` instance offers basic API to do `Set`, `Get` and `Remove` operations.
+The `PgKeyValueDB` instance offers basic API to do `Set`, `Get` and `Remove` operations.
 
 ## FAQ
 

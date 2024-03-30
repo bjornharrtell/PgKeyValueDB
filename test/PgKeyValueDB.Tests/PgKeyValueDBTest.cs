@@ -1,8 +1,9 @@
-namespace Npgsql.DocumentDB.Tests;
+namespace Wololo.PgKeyValueDB.Tests;
 
-public class NpgsqlDocumentDBTest(NpgsqlDocumentDB kv)
+public class PgKeyValueDBTest(PgKeyValueDB kv)
 {
-    public class Poco {
+    public class Poco
+    {
         public string? Value { get; set; }
     }
 
@@ -20,7 +21,7 @@ public class NpgsqlDocumentDBTest(NpgsqlDocumentDB kv)
         var count2 = kv.Count();
         Assert.Equal(0, count2);
     }
-    
+
     [Fact]
     public void NonExistingKeyGetTest()
     {

@@ -1,16 +1,16 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
-using Npgsql.DocumentDB;
+using Wololo.PgKeyValueDB;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
 public static class NpgsqlServiceCollectionExtensions
 {
-    public static IServiceCollection AddNpgsqlDocumentDB(this IServiceCollection serviceCollection, string connectionString, Action<NpgsqlDocumentDBBuilder>? action = null, ServiceLifetime dataSourceLifetime = ServiceLifetime.Singleton, object? serviceKey = null)
+    public static IServiceCollection AddPgKeyValueDB(this IServiceCollection serviceCollection, string connectionString, Action<PgKeyValueDBBuilder>? action = null, ServiceLifetime dataSourceLifetime = ServiceLifetime.Singleton, object? serviceKey = null)
     {
-        serviceCollection.TryAdd(new ServiceDescriptor(typeof(NpgsqlDocumentDB), serviceKey, delegate (IServiceProvider sp, object? key)
+        serviceCollection.TryAdd(new ServiceDescriptor(typeof(PgKeyValueDB), serviceKey, delegate (IServiceProvider sp, object? key)
         {
-            NpgsqlDocumentDBBuilder builder = new(connectionString, key);
+            PgKeyValueDBBuilder builder = new(connectionString, key);
             action?.Invoke(builder);
             return builder.Build();
         }, dataSourceLifetime));
@@ -18,7 +18,7 @@ public static class NpgsqlServiceCollectionExtensions
     }
 }
 
-public class NpgsqlDocumentDBBuilder(string connectionString, object? serviceKey = null)
+public class PgKeyValueDBBuilder(string connectionString, object? serviceKey = null)
 {
     const string DEFAULT_TABLE_NAME = "npgsql_documentdb";
 
@@ -30,6 +30,6 @@ public class NpgsqlDocumentDBBuilder(string connectionString, object? serviceKey
     {
         var dataSource = new NpgsqlDataSourceBuilder(connectionString).EnableDynamicJson().Build();
         var tableName = CreateTableName();
-        return new NpgsqlDocumentDB(dataSource, tableName);
+        return new PgKeyValueDB(dataSource, tableName);
     }
 }

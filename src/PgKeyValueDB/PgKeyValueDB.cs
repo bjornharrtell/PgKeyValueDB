@@ -1,13 +1,14 @@
-﻿using NpgsqlTypes;
+﻿using Npgsql;
+using NpgsqlTypes;
 
-namespace Npgsql.DocumentDB;
+namespace Wololo.PgKeyValueDB;
 
-public class NpgsqlDocumentDB
+public class PgKeyValueDB
 {
     readonly NpgsqlDataSource dataSource;
     readonly string tableName;
 
-    public NpgsqlDocumentDB(NpgsqlDataSource dataSource, string tableName)
+    public PgKeyValueDB(NpgsqlDataSource dataSource, string tableName)
     {
         this.dataSource = dataSource;
         this.tableName = tableName;
@@ -26,7 +27,8 @@ public class NpgsqlDocumentDB
     }
 
     private NpgsqlCommand CreateSetCommand<T>(NpgsqlConnection conn, string pid, string id, T value) =>
-        new($"insert into {tableName} (pid, id, value) values ($1, $2, $3) on conflict (pid, id) do update set value = $3", conn) {
+        new($"insert into {tableName} (pid, id, value) values ($1, $2, $3) on conflict (pid, id) do update set value = $3", conn)
+        {
             Parameters = { new() { Value = pid }, new() { Value = id }, new() { Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb } }
         };
 
@@ -47,7 +49,8 @@ public class NpgsqlDocumentDB
     }
 
     private NpgsqlCommand CreateRemoveCommand(NpgsqlConnection conn, string pid, string id) =>
-        new($"delete from {tableName} where pid = $1 and id = $2", conn) {
+        new($"delete from {tableName} where pid = $1 and id = $2", conn)
+        {
             Parameters = { new() { Value = pid }, new() { Value = id } }
         };
 
@@ -68,7 +71,8 @@ public class NpgsqlDocumentDB
     }
 
     private NpgsqlCommand CreateGetCommand(NpgsqlConnection conn, string pid, string id) =>
-        new($"select value from {tableName} where pid = $1 and id = $2", conn) {
+        new($"select value from {tableName} where pid = $1 and id = $2", conn)
+        {
             Parameters = { new() { Value = pid }, new() { Value = id } }
         };
 
@@ -97,10 +101,11 @@ public class NpgsqlDocumentDB
     }
 
     private NpgsqlCommand CreateGetSetCommand(NpgsqlConnection conn, string pid, long limit) =>
-        new($"select value from {tableName} where pid = $1 limit $2", conn) {
+        new($"select value from {tableName} where pid = $1 limit $2", conn)
+        {
             Parameters = { new() { Value = pid }, new() { Value = limit } }
         };
-    
+
     public HashSet<T> GetSet<T>(string pid = "default", long limit = 0)
     {
         using var conn = dataSource.OpenConnection();
@@ -126,7 +131,8 @@ public class NpgsqlDocumentDB
     }
 
     private NpgsqlCommand CreateExistsCommand(NpgsqlConnection conn, string pid, string id) =>
-        new($"select exists(select 1 from {tableName} where pid = $1 and id = $2)", conn) {
+        new($"select exists(select 1 from {tableName} where pid = $1 and id = $2)", conn)
+        {
             Parameters = { new() { Value = pid }, new() { Value = id } }
         };
 
@@ -153,7 +159,8 @@ public class NpgsqlDocumentDB
     }
 
     private NpgsqlCommand CreateCountCommand(NpgsqlConnection conn, string pid) =>
-        new($"select count(1) from {tableName} where pid = $1", conn) {
+        new($"select count(1) from {tableName} where pid = $1", conn)
+        {
             Parameters = { new() { Value = pid } }
         };
 
