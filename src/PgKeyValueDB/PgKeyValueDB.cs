@@ -21,29 +21,44 @@ public class PgKeyValueDB
     pid text check (char_length(id) between 1 and 255),
     id text check (char_length(id) between 1 and 255),
     value jsonb not null,
+    created timestamptz not null,
+    updated timestamptz,
+    expires timestamptz,
     primary key (pid, id)
 )")
             .ExecuteNonQuery();
+        dataSource.CreateCommand($@"create index if not exists created_idx on {tableName} (created)")
+            .ExecuteNonQuery();
+        dataSource.CreateCommand($@"create index if not exists updated_idx on {tableName} (updated) where updated is not null")
+            .ExecuteNonQuery();
+        dataSource.CreateCommand($@"create index if not exists expires_idx on {tableName} (expires) where expires is not null")
+            .ExecuteNonQuery();
     }
 
-    private NpgsqlCommand CreateSetCommand<T>(NpgsqlConnection conn, string pid, string id, T value) =>
-        new($"insert into {tableName} (pid, id, value) values ($1, $2, $3) on conflict (pid, id) do update set value = $3", conn)
+    private NpgsqlCommand CreateSetCommand<T>(NpgsqlConnection conn, string pid, string id, T value, DateTimeOffset? expires) =>
+        new($"insert into {tableName} (pid, id, value, created, expires) values ($1, $2, $3, now(), $4) on conflict (pid, id) do update set value = $3, updated = now(), expires = $4", conn)
         {
-            Parameters = { new() { Value = pid }, new() { Value = id }, new() { Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb } }
+            Parameters =
+            {
+                new() { Value = pid },
+                new() { Value = id },
+                new() { Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb },
+                new() { Value = (object?) expires ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.TimestampTz }
+            }
         };
 
-    public void Set<T>(string id, T value, string pid = "default")
+    public void Set<T>(string id, T value, string pid = "default", DateTimeOffset? expires = null)
     {
         using var conn = dataSource.OpenConnection();
-        using var cmd = CreateSetCommand(conn, pid, id, value);
+        using var cmd = CreateSetCommand(conn, pid, id, value, expires);
         cmd.Prepare();
         cmd.ExecuteNonQuery();
     }
 
-    public async Task SetAsync<T>(string id, T value, string pid = "default")
+    public async Task SetAsync<T>(string id, T value, string pid = "default", DateTimeOffset? expires = null)
     {
         using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateSetCommand(conn, pid, id, value);
+        using var cmd = CreateSetCommand(conn, pid, id, value, expires);
         await cmd.PrepareAsync();
         await cmd.ExecuteNonQueryAsync();
     }
@@ -88,6 +103,28 @@ public class PgKeyValueDB
     {
         using var conn = await dataSource.OpenConnectionAsync();
         using var cmd = CreateRemoveAllCommand(conn, pid);
+        await cmd.PrepareAsync();
+        return await cmd.ExecuteNonQueryAsync();
+    }
+
+    private NpgsqlCommand CreateRemoveAllExpiredCommand(NpgsqlConnection conn, string pid) =>
+        new($"delete from {tableName} where pid = $1 and coalesce(updated,created) > expires", conn)
+        {
+            Parameters = { new() { Value = pid } }
+        };
+
+    public int RemoveAllExpired(string pid = "default")
+    {
+        using var conn = dataSource.OpenConnection();
+        using var cmd = CreateRemoveAllExpiredCommand(conn, pid);
+        cmd.Prepare();
+        return cmd.ExecuteNonQuery();
+    }
+
+    public async Task<int> RemoveAllExpiredAsync(string pid = "default")
+    {
+        using var conn = await dataSource.OpenConnectionAsync();
+        using var cmd = CreateRemoveAllExpiredCommand(conn, pid);
         await cmd.PrepareAsync();
         return await cmd.ExecuteNonQueryAsync();
     }

@@ -46,4 +46,16 @@ public class PgKeyValueDBTest(PgKeyValueDB kv)
         var result = kv.RemoveAll();
         Assert.Equal(1, result);
     }
+
+    [Fact]
+    public void RemoveAllExpiredTest()
+    {
+        var key = nameof(BasicTest);
+        kv.Set(key, new Poco { Value = key });
+        var result = kv.RemoveAllExpired();
+        Assert.Equal(0, result);
+        kv.Set(key, new Poco { Value = key }, "default", DateTimeOffset.UtcNow.AddMinutes(-1));
+        result = kv.RemoveAllExpired();
+        Assert.Equal(1, result);
+    }
 }
