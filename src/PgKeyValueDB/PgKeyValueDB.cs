@@ -108,7 +108,7 @@ public class PgKeyValueDB
     }
 
     private NpgsqlCommand CreateRemoveAllExpiredCommand(NpgsqlConnection conn, string pid) =>
-        new($"delete from {tableName} where pid = $1 and coalesce(updated,created) > expires", conn)
+        new($"delete from {tableName} where pid = $1 and now() > expires", conn)
         {
             Parameters = { new() { Value = pid } }
         };
