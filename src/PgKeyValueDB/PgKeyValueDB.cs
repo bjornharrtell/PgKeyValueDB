@@ -27,11 +27,11 @@ public class PgKeyValueDB
     primary key (pid, id)
 )")
             .ExecuteNonQuery();
-        dataSource.CreateCommand($@"create index if not exists created_idx on {tableName} (created)")
+        dataSource.CreateCommand($@"create index if not exists {tableName}_created_idx on {tableName} (created)")
             .ExecuteNonQuery();
-        dataSource.CreateCommand($@"create index if not exists updated_idx on {tableName} (updated) where updated is not null")
+        dataSource.CreateCommand($@"create index if not exists {tableName}_updated_idx on {tableName} (updated) where updated is not null")
             .ExecuteNonQuery();
-        dataSource.CreateCommand($@"create index if not exists expires_idx on {tableName} (expires) where expires is not null")
+        dataSource.CreateCommand($@"create index if not exists {tableName}_expires_idx on {tableName} (expires) where expires is not null")
             .ExecuteNonQuery();
     }
 
