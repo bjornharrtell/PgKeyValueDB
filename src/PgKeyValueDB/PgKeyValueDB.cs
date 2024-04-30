@@ -108,7 +108,7 @@ public class PgKeyValueDB
     }
 
     private NpgsqlCommand CreateRemoveAllExpiredCommand(NpgsqlConnection conn, string pid) =>
-        new($"delete from {tableName} where pid = $1 and now() > expires", conn)
+        new($"delete from {tableName} where pid = $1 and now() >= expires", conn)
         {
             Parameters = { new() { Value = pid } }
         };
@@ -130,7 +130,7 @@ public class PgKeyValueDB
     }
 
     private NpgsqlCommand CreateGetCommand(NpgsqlConnection conn, string pid, string id) =>
-        new($"select value from {tableName} where pid = $1 and id = $2", conn)
+        new($"select value from {tableName} where pid = $1 and id = $2 and expires is null or now() < expires", conn)
         {
             Parameters = { new() { Value = pid }, new() { Value = id } }
         };
@@ -160,7 +160,7 @@ public class PgKeyValueDB
     }
 
     private NpgsqlCommand CreateGetSetCommand(NpgsqlConnection conn, string pid, long limit) =>
-        new($"select value from {tableName} where pid = $1 limit $2", conn)
+        new($"select value from {tableName} where pid = $1 and expires is null or now() < expires limit $2", conn)
         {
             Parameters = { new() { Value = pid }, new() { Value = limit } }
         };
@@ -190,7 +190,7 @@ public class PgKeyValueDB
     }
 
     private NpgsqlCommand CreateExistsCommand(NpgsqlConnection conn, string pid, string id) =>
-        new($"select exists(select 1 from {tableName} where pid = $1 and id = $2)", conn)
+        new($"select exists(select 1 from {tableName} where pid = $1 and id = $2 and expires is null or now() < expires)", conn)
         {
             Parameters = { new() { Value = pid }, new() { Value = id } }
         };
@@ -218,7 +218,7 @@ public class PgKeyValueDB
     }
 
     private NpgsqlCommand CreateCountCommand(NpgsqlConnection conn, string pid) =>
-        new($"select count(1) from {tableName} where pid = $1", conn)
+        new($"select count(1) from {tableName} where pid = $1 and expires is null or now() < expires", conn)
         {
             Parameters = { new() { Value = pid } }
         };
