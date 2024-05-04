@@ -159,16 +159,16 @@ public class PgKeyValueDB
         return value;
     }
 
-    private NpgsqlCommand CreateGetSetCommand(NpgsqlConnection conn, string pid, long limit) =>
+    private NpgsqlCommand CreateGetHashSetCommand(NpgsqlConnection conn, string pid, long limit) =>
         new($"select value from {tableName} where pid = $1 and (expires is null or now() < expires) limit $2", conn)
         {
             Parameters = { new() { Value = pid }, new() { Value = limit } }
         };
 
-    public HashSet<T> GetSet<T>(string pid = "default", long limit = 0)
+    public HashSet<T> GetHashSet<T>(string pid = "default", long limit = 0)
     {
         using var conn = dataSource.OpenConnection();
-        using var cmd = CreateGetSetCommand(conn, pid, limit);
+        using var cmd = CreateGetHashSetCommand(conn, pid, limit);
         cmd.Prepare();
         using var reader = cmd.ExecuteReader();
         var set = new HashSet<T>();
@@ -177,10 +177,10 @@ public class PgKeyValueDB
         return set;
     }
 
-    public async Task<HashSet<T>> GetSetAsync<T>(string pid = "default", long limit = 0)
+    public async Task<HashSet<T>> GetHashSetAsync<T>(string pid = "default", long limit = 0)
     {
         using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateGetSetCommand(conn, pid, limit);
+        using var cmd = CreateGetHashSetCommand(conn, pid, limit);
         await cmd.PrepareAsync();
         using var reader = await cmd.ExecuteReaderAsync();
         var set = new HashSet<T>();
