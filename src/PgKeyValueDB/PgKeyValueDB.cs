@@ -8,6 +8,8 @@ public class PgKeyValueDB
     readonly NpgsqlDataSource dataSource;
     readonly string tableName;
 
+    const string DEFAULT_PID = "default";
+
     public PgKeyValueDB(NpgsqlDataSource dataSource, string tableName)
     {
         this.dataSource = dataSource;
@@ -47,7 +49,7 @@ public class PgKeyValueDB
             }
         };
 
-    public void Set<T>(string id, T value, string pid = "default", DateTimeOffset? expires = null)
+    public void Set<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
     {
         using var conn = dataSource.OpenConnection();
         using var cmd = CreateSetCommand(conn, pid, id, value, expires);
@@ -55,7 +57,7 @@ public class PgKeyValueDB
         cmd.ExecuteNonQuery();
     }
 
-    public async Task SetAsync<T>(string id, T value, string pid = "default", DateTimeOffset? expires = null)
+    public async Task SetAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
     {
         using var conn = await dataSource.OpenConnectionAsync();
         using var cmd = CreateSetCommand(conn, pid, id, value, expires);
@@ -69,7 +71,7 @@ public class PgKeyValueDB
             Parameters = { new() { Value = pid }, new() { Value = id } }
         };
 
-    public bool Remove(string id, string pid = "default")
+    public bool Remove(string id, string pid = DEFAULT_PID)
     {
         using var conn = dataSource.OpenConnection();
         using var cmd = CreateRemoveCommand(conn, pid, id);
@@ -77,7 +79,7 @@ public class PgKeyValueDB
         return cmd.ExecuteNonQuery() > 0;
     }
 
-    public async Task<bool> RemoveAsync(string id, string pid = "default")
+    public async Task<bool> RemoveAsync(string id, string pid = DEFAULT_PID)
     {
         using var conn = await dataSource.OpenConnectionAsync();
         using var cmd = CreateRemoveCommand(conn, pid, id);
@@ -91,7 +93,7 @@ public class PgKeyValueDB
             Parameters = { new() { Value = pid } }
         };
 
-    public int RemoveAll(string pid = "default")
+    public int RemoveAll(string pid = DEFAULT_PID)
     {
         using var conn = dataSource.OpenConnection();
         using var cmd = CreateRemoveAllCommand(conn, pid);
@@ -99,7 +101,7 @@ public class PgKeyValueDB
         return cmd.ExecuteNonQuery();
     }
 
-    public async Task<int> RemoveAllAsync(string pid = "default")
+    public async Task<int> RemoveAllAsync(string pid = DEFAULT_PID)
     {
         using var conn = await dataSource.OpenConnectionAsync();
         using var cmd = CreateRemoveAllCommand(conn, pid);
@@ -113,7 +115,7 @@ public class PgKeyValueDB
             Parameters = { new() { Value = pid } }
         };
 
-    public int RemoveAllExpired(string pid = "default")
+    public int RemoveAllExpired(string pid = DEFAULT_PID)
     {
         using var conn = dataSource.OpenConnection();
         using var cmd = CreateRemoveAllExpiredCommand(conn, pid);
@@ -121,7 +123,7 @@ public class PgKeyValueDB
         return cmd.ExecuteNonQuery();
     }
 
-    public async Task<int> RemoveAllExpiredAsync(string pid = "default")
+    public async Task<int> RemoveAllExpiredAsync(string pid = DEFAULT_PID)
     {
         using var conn = await dataSource.OpenConnectionAsync();
         using var cmd = CreateRemoveAllExpiredCommand(conn, pid);
@@ -135,7 +137,7 @@ public class PgKeyValueDB
             Parameters = { new() { Value = pid }, new() { Value = id } }
         };
 
-    public T? Get<T>(string id, string pid = "default")
+    public T? Get<T>(string id, string pid = DEFAULT_PID)
     {
         using var conn = dataSource.OpenConnection();
         using var cmd = CreateGetCommand(conn, pid, id);
@@ -147,7 +149,7 @@ public class PgKeyValueDB
         return value;
     }
 
-    public async Task<T?> GetAsync<T>(string id, string pid = "default")
+    public async Task<T?> GetAsync<T>(string id, string pid = DEFAULT_PID)
     {
         using var conn = await dataSource.OpenConnectionAsync();
         using var cmd = CreateGetCommand(conn, pid, id);
@@ -165,7 +167,7 @@ public class PgKeyValueDB
             Parameters = { new() { Value = pid }, new() { Value = limit } }
         };
 
-    public HashSet<T> GetHashSet<T>(string pid = "default", long limit = 0)
+    public HashSet<T> GetHashSet<T>(string pid = DEFAULT_PID, long limit = 0)
     {
         using var conn = dataSource.OpenConnection();
         using var cmd = CreateGetHashSetCommand(conn, pid, limit);
@@ -177,7 +179,7 @@ public class PgKeyValueDB
         return set;
     }
 
-    public async Task<HashSet<T>> GetHashSetAsync<T>(string pid = "default", long limit = 0)
+    public async Task<HashSet<T>> GetHashSetAsync<T>(string pid = DEFAULT_PID, long limit = 0)
     {
         using var conn = await dataSource.OpenConnectionAsync();
         using var cmd = CreateGetHashSetCommand(conn, pid, limit);
@@ -195,7 +197,7 @@ public class PgKeyValueDB
             Parameters = { new() { Value = pid }, new() { Value = id } }
         };
 
-    public bool Exists(string id, string pid = "default")
+    public bool Exists(string id, string pid = DEFAULT_PID)
     {
         using var conn = dataSource.OpenConnection();
         using var cmd = CreateExistsCommand(conn, pid, id);
@@ -206,7 +208,7 @@ public class PgKeyValueDB
         return value;
     }
 
-    public async Task<bool> ExistsAsync(string id, string pid = "default")
+    public async Task<bool> ExistsAsync(string id, string pid = DEFAULT_PID)
     {
         using var conn = await dataSource.OpenConnectionAsync();
         using var cmd = CreateExistsCommand(conn, pid, id);
@@ -223,7 +225,7 @@ public class PgKeyValueDB
             Parameters = { new() { Value = pid } }
         };
 
-    public long Count(string pid = "default")
+    public long Count(string pid = DEFAULT_PID)
     {
         using var conn = dataSource.OpenConnection();
         using var cmd = CreateCountCommand(conn, pid);
@@ -234,7 +236,7 @@ public class PgKeyValueDB
         return value;
     }
 
-    public async Task<long> CountAsync(string pid = "default")
+    public async Task<long> CountAsync(string pid = DEFAULT_PID)
     {
         using var conn = await dataSource.OpenConnectionAsync();
         using var cmd = CreateCountCommand(conn, pid);
