@@ -23,6 +23,7 @@ public class PgKeyValueDBBuilder(string connectionString, object? serviceKey = n
     const string DEFAULT_TABLE_NAME = "npgsql_documentdb";
 
     public string TableName { get; set; } = DEFAULT_TABLE_NAME;
+    public bool Upsert { get; set; } = true;
 
     string CreateTableName() => serviceKey == null ? TableName : $"{TableName}_{serviceKey}";
 
@@ -30,6 +31,6 @@ public class PgKeyValueDBBuilder(string connectionString, object? serviceKey = n
     {
         var dataSource = new NpgsqlDataSourceBuilder(connectionString).EnableDynamicJson().Build();
         var tableName = CreateTableName();
-        return new PgKeyValueDB(dataSource, tableName);
+        return new PgKeyValueDB(dataSource, tableName, Upsert);
     }
 }

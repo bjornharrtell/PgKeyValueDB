@@ -7,13 +7,15 @@ public class PgKeyValueDB
 {
     readonly NpgsqlDataSource dataSource;
     readonly string tableName;
+    readonly bool upsert = true;
 
     const string DEFAULT_PID = "default";
 
-    public PgKeyValueDB(NpgsqlDataSource dataSource, string tableName)
+    public PgKeyValueDB(NpgsqlDataSource dataSource, string tableName, bool upsert)
     {
         this.dataSource = dataSource;
         this.tableName = tableName;
+        this.upsert = upsert;
         Init();
     }
 
@@ -37,8 +39,11 @@ public class PgKeyValueDB
             .ExecuteNonQuery();
     }
 
+    private string SetSql => $"insert into {tableName} (pid, id, value, created, expires) values ($1, $2, $3, now(), $4)";
+    private string UpsertSql => SetSql + " on conflict (pid, id) do update set value = $3, updated = now(), expires = $4";
+
     private NpgsqlCommand CreateSetCommand<T>(NpgsqlConnection conn, string pid, string id, T value, DateTimeOffset? expires) =>
-        new($"insert into {tableName} (pid, id, value, created, expires) values ($1, $2, $3, now(), $4) on conflict (pid, id) do update set value = $3, updated = now(), expires = $4", conn)
+        new(upsert ? UpsertSql : SetSql, conn)
         {
             Parameters =
             {

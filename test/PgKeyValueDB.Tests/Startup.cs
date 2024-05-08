@@ -11,7 +11,8 @@ public class Startup : IDisposable
     {
         pg = new PgServer("16.2.0", clearWorkingDirOnStart: true, clearInstanceDirOnStop: true);
         pg.Start();
-        services.AddPgKeyValueDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres");
+        services.AddPgKeyValueDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres", serviceKey: "standard");
+        services.AddPgKeyValueDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres", a => a.Upsert = false, serviceKey: "noupsert");
     }
 
     public void Dispose()
