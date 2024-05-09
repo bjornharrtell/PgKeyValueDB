@@ -39,7 +39,7 @@ public class PgKeyValueDBTest(PgKeyValueDB kv)
     {
         var key = nameof(NonExistingKeyRemoveTest);
         var pid = nameof(NonExistingKeyRemoveTest);
-        var result = kv.Remove(key ,pid);
+        var result = kv.Remove(key, pid);
         Assert.False(result);
     }
 
@@ -72,7 +72,8 @@ public class PgKeyValueDBTest(PgKeyValueDB kv)
         var key = nameof(DuplicateKeyTest);
         var pid = nameof(DuplicateKeyTest);
         kv.Create(key, new Poco { Value = key }, pid);
-        var ex = Record.Exception(() => {
+        var ex = Record.Exception(() =>
+        {
             kv.Create(key, new Poco { Value = key }, pid);
         });
         Assert.IsType<PostgresException>(ex);
