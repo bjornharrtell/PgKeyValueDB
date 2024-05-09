@@ -37,7 +37,63 @@ public class PgKeyValueDB
             .ExecuteNonQuery();
     }
 
-    private NpgsqlCommand CreateSetCommand<T>(NpgsqlConnection conn, string pid, string id, T value, DateTimeOffset? expires) =>
+    private NpgsqlCommand CreateCreateCommand<T>(NpgsqlConnection conn, string pid, string id, T value, DateTimeOffset? expires) =>
+        new($"insert into {tableName} (pid, id, value, created, expires) values ($1, $2, $3, now(), $4)", conn)
+        {
+            Parameters =
+            {
+                new() { Value = pid },
+                new() { Value = id },
+                new() { Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb },
+                new() { Value = (object?) expires ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.TimestampTz }
+            }
+        };
+
+    public void Create<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
+    {
+        using var conn = dataSource.OpenConnection();
+        using var cmd = CreateCreateCommand(conn, pid, id, value, expires);
+        cmd.Prepare();
+        cmd.ExecuteNonQuery();
+    }
+
+    public async Task CreateAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
+    {
+        using var conn = await dataSource.OpenConnectionAsync();
+        using var cmd = CreateCreateCommand(conn, pid, id, value, expires);
+        await cmd.PrepareAsync();
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private NpgsqlCommand CreateUpdateCommand<T>(NpgsqlConnection conn, string pid, string id, T value, DateTimeOffset? expires) =>
+        new($"update {tableName} set value = $3, updated = now(), expires = $4 where pid = $1 and id = $2", conn)
+        {
+            Parameters =
+            {
+                new() { Value = pid },
+                new() { Value = id },
+                new() { Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb },
+                new() { Value = (object?) expires ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.TimestampTz }
+            }
+        };
+
+    public void Update<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
+    {
+        using var conn = dataSource.OpenConnection();
+        using var cmd = CreateUpdateCommand(conn, pid, id, value, expires);
+        cmd.Prepare();
+        cmd.ExecuteNonQuery();
+    }
+
+    public async Task UpdateAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
+    {
+        using var conn = await dataSource.OpenConnectionAsync();
+        using var cmd = CreateUpdateCommand(conn, pid, id, value, expires);
+        await cmd.PrepareAsync();
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private NpgsqlCommand CreateUpsertCommand<T>(NpgsqlConnection conn, string pid, string id, T value, DateTimeOffset? expires) =>
         new($"insert into {tableName} (pid, id, value, created, expires) values ($1, $2, $3, now(), $4) on conflict (pid, id) do update set value = $3, updated = now(), expires = $4", conn)
         {
             Parameters =
@@ -49,18 +105,18 @@ public class PgKeyValueDB
             }
         };
 
-    public void Set<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
+    public void Upsert<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
     {
         using var conn = dataSource.OpenConnection();
-        using var cmd = CreateSetCommand(conn, pid, id, value, expires);
+        using var cmd = CreateUpsertCommand(conn, pid, id, value, expires);
         cmd.Prepare();
         cmd.ExecuteNonQuery();
     }
 
-    public async Task SetAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
+    public async Task UpsertAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
     {
         using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateSetCommand(conn, pid, id, value, expires);
+        using var cmd = CreateUpsertCommand(conn, pid, id, value, expires);
         await cmd.PrepareAsync();
         await cmd.ExecuteNonQueryAsync();
     }
