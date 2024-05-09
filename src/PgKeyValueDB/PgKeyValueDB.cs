@@ -49,20 +49,40 @@ public class PgKeyValueDB
             }
         };
 
-    public void Create<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
+    public bool Create<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
     {
         using var conn = dataSource.OpenConnection();
         using var cmd = CreateCreateCommand(conn, pid, id, value, expires);
         cmd.Prepare();
-        cmd.ExecuteNonQuery();
+        try
+        {
+            cmd.ExecuteNonQuery();
+        }
+        catch (PostgresException e)
+        {
+            if (e.SqlState == PostgresErrorCodes.UniqueViolation)
+                return false;
+            else throw;
+        }
+        return true;
     }
 
-    public async Task CreateAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
+    public async Task<bool> CreateAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
     {
         using var conn = await dataSource.OpenConnectionAsync();
         using var cmd = CreateCreateCommand(conn, pid, id, value, expires);
         await cmd.PrepareAsync();
-        await cmd.ExecuteNonQueryAsync();
+        try
+        {
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch (PostgresException e)
+        {
+            if (e.SqlState == PostgresErrorCodes.UniqueViolation)
+                return false;
+            else throw;
+        }
+        return true;
     }
 
     private NpgsqlCommand CreateUpdateCommand<T>(NpgsqlConnection conn, string pid, string id, T value, DateTimeOffset? expires) =>
@@ -77,20 +97,20 @@ public class PgKeyValueDB
             }
         };
 
-    public void Update<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
+    public bool Update<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
     {
         using var conn = dataSource.OpenConnection();
         using var cmd = CreateUpdateCommand(conn, pid, id, value, expires);
         cmd.Prepare();
-        cmd.ExecuteNonQuery();
+        return cmd.ExecuteNonQuery() > 0;
     }
 
-    public async Task UpdateAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
+    public async Task<bool> UpdateAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
     {
         using var conn = await dataSource.OpenConnectionAsync();
         using var cmd = CreateUpdateCommand(conn, pid, id, value, expires);
         await cmd.PrepareAsync();
-        await cmd.ExecuteNonQueryAsync();
+        return await cmd.ExecuteNonQueryAsync() > 0;
     }
 
     private NpgsqlCommand CreateUpsertCommand<T>(NpgsqlConnection conn, string pid, string id, T value, DateTimeOffset? expires) =>

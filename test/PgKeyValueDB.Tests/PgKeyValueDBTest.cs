@@ -71,12 +71,18 @@ public class PgKeyValueDBTest(PgKeyValueDB kv)
     {
         var key = nameof(DuplicateKeyTest);
         var pid = nameof(DuplicateKeyTest);
-        kv.Create(key, new Poco { Value = key }, pid);
-        var ex = Record.Exception(() =>
-        {
-            kv.Create(key, new Poco { Value = key }, pid);
-        });
-        Assert.IsType<PostgresException>(ex);
-        Assert.Contains("23505", ex.Message);
+        var ok = kv.Create(key, new Poco { Value = key }, pid);
+        var notok = kv.Create(key, new Poco { Value = key }, pid);
+        Assert.True(ok);
+        Assert.False(notok);
+    }
+
+    [Fact]
+    public void MissingKeyTest()
+    {
+        var key = nameof(MissingKeyTest);
+        var pid = nameof(MissingKeyTest);
+        var result = kv.Update(key, new Poco { Value = key }, pid);
+        Assert.False(result);
     }
 }
