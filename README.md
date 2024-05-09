@@ -18,7 +18,7 @@ services.AddPgKeyValueDB(connectionString);
 
 You can then inject `PgKeyValueDB` as constructor parameter where you need it.
 
-The `PgKeyValueDB` instance offers basic API to do `Set`, `Get` and `Remove` operations.
+The `PgKeyValueDB` instance offers basic API to do `Create`, `Update`, `Upsert`, `Get` and `Remove` operations with optional partition key and expiration.
 
 ## FAQ
 
