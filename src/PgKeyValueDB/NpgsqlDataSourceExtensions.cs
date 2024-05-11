@@ -27,8 +27,8 @@ static class NpgsqlDataSourceExtensions
     {
         try
         {
-            using var conn = await dataSource.OpenConnectionAsync();
-            using var cmd = new NpgsqlCommand(sql, conn);
+            await using var conn = await dataSource.OpenConnectionAsync();
+            await using var cmd = new NpgsqlCommand(sql, conn);
             if (parameters != null)
                 foreach (var parameter in parameters)
                     cmd.Parameters.Add(parameter);
@@ -62,14 +62,14 @@ static class NpgsqlDataSourceExtensions
 
     internal static async Task<T?> ExecuteAsync<T>(this NpgsqlDataSource dataSource, string sql, NpgsqlParameter[]? parameters = null, bool prepare = true)
     {
-        using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = new NpgsqlCommand(sql, conn);
+        await using var conn = await dataSource.OpenConnectionAsync();
+        await using var cmd = new NpgsqlCommand(sql, conn);
         if (parameters != null)
             foreach (var parameter in parameters)
                 cmd.Parameters.Add(parameter);
         if (prepare)
             cmd.Prepare();
-        using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync();
         if (!await reader.ReadAsync())
             return default;
         var value = await reader.GetFieldValueAsync<T>(0);
@@ -94,14 +94,14 @@ static class NpgsqlDataSourceExtensions
 
     internal static async Task<HashSet<T>> ExecuteSetAsync<T>(this NpgsqlDataSource dataSource, string sql, NpgsqlParameter[]? parameters = null, bool prepare = true)
     {
-        using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = new NpgsqlCommand(sql, conn);
+        await using var conn = await dataSource.OpenConnectionAsync();
+        await using var cmd = new NpgsqlCommand(sql, conn);
         if (parameters != null)
             foreach (var parameter in parameters)
                 cmd.Parameters.Add(parameter);
         if (prepare)
             cmd.Prepare();
-        using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync();
         var set = new HashSet<T>();
         while (reader.Read())
             set.Add(reader.GetFieldValue<T>(0));
