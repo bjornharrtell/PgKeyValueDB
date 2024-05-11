@@ -1,88 +1,109 @@
-using Npgsql;
+using Microsoft.Extensions.DependencyInjection;
+using MysticMind.PostgresEmbed;
 
 namespace Wololo.PgKeyValueDB.Tests;
 
-public class PgKeyValueDBTest(PgKeyValueDB kv)
+[TestClass]
+public class PgKeyValueDBTest
 {
+    private static PgServer pg = null!;
+    private static PgKeyValueDB kv = null!;
+
+    [ClassInitialize]
+    public static void ClassInit(TestContext context) {
+        IServiceCollection services = new ServiceCollection();
+        pg = new PgServer("16.2.0", clearWorkingDirOnStart: true, clearInstanceDirOnStop: true);
+        pg.Start();
+        services.AddPgKeyValueDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres");
+        var serviceProvider = services.BuildServiceProvider();
+        kv = serviceProvider.GetRequiredService<PgKeyValueDB>();
+    }
+
+    [ClassCleanup()]
+    public static void ClassCleanup() {
+        pg?.Stop();
+        pg?.Dispose();
+    }
+
     public class Poco
     {
         public string? Value { get; set; }
     }
 
-    [Fact]
+    [TestMethod]
     public void BasicTest()
     {
         var key = nameof(BasicTest);
         var pid = nameof(BasicTest);
         kv.Upsert(key, new Poco { Value = key }, pid);
         var poco = kv.Get<Poco>(key, pid);
-        Assert.Equal(key, poco?.Value);
+        Assert.AreEqual(key, poco?.Value);
         var count1 = kv.Count(pid);
-        Assert.Equal(1, count1);
+        Assert.AreEqual(1, count1);
         var result = kv.Remove(key, pid);
-        Assert.True(result);
+        Assert.IsTrue(result);
         var count2 = kv.Count(pid);
-        Assert.Equal(0, count2);
+        Assert.AreEqual(0, count2);
     }
 
-    [Fact]
+    [TestMethod]
     public void NonExistingKeyGetTest()
     {
         var key = nameof(NonExistingKeyGetTest);
         var pid = nameof(NonExistingKeyGetTest);
         var value = kv.Get<Poco>(key, pid);
-        Assert.Null(value);
+        Assert.IsNull(value);
     }
 
-    [Fact]
+    [TestMethod]
     public void NonExistingKeyRemoveTest()
     {
         var key = nameof(NonExistingKeyRemoveTest);
         var pid = nameof(NonExistingKeyRemoveTest);
         var result = kv.Remove(key, pid);
-        Assert.False(result);
+        Assert.IsFalse(result);
     }
 
-    [Fact]
+    [TestMethod]
     public void RemoveAllTest()
     {
         var key = nameof(RemoveAllTest);
         var pid = nameof(RemoveAllTest);
         kv.Upsert(key, new Poco { Value = key }, pid);
         var result = kv.RemoveAll(pid);
-        Assert.Equal(1, result);
+        Assert.AreEqual(1, result);
     }
 
-    [Fact]
+    [TestMethod]
     public void RemoveAllExpiredTest()
     {
         var key = nameof(RemoveAllExpiredTest);
         var pid = nameof(RemoveAllExpiredTest);
         kv.Upsert(key, new Poco { Value = key }, pid);
         var result = kv.RemoveAllExpired(pid);
-        Assert.Equal(0, result);
+        Assert.AreEqual(0, result);
         kv.Upsert(key, new Poco { Value = key }, pid, DateTimeOffset.UtcNow.AddMinutes(-1));
         result = kv.RemoveAllExpired(pid);
-        Assert.Equal(1, result);
+        Assert.AreEqual(1, result);
     }
 
-    [Fact]
+    [TestMethod]
     public void DuplicateKeyTest()
     {
         var key = nameof(DuplicateKeyTest);
         var pid = nameof(DuplicateKeyTest);
         var ok = kv.Create(key, new Poco { Value = key }, pid);
         var notok = kv.Create(key, new Poco { Value = key }, pid);
-        Assert.True(ok);
-        Assert.False(notok);
+        Assert.IsTrue(ok);
+        Assert.IsFalse(notok);
     }
 
-    [Fact]
+    [TestMethod]
     public void MissingKeyTest()
     {
         var key = nameof(MissingKeyTest);
         var pid = nameof(MissingKeyTest);
         var result = kv.Update(key, new Poco { Value = key }, pid);
-        Assert.False(result);
+        Assert.IsFalse(result);
     }
 }
