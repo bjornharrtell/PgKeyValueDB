@@ -19,7 +19,7 @@ public class PgKeyValueDB
 
     private void Init()
     {
-        dataSource.CreateCommand($@"create table if not exists {tableName} (
+        dataSource.Execute($@"create table if not exists {tableName} (
     pid text check (char_length(id) between 1 and 255),
     id text check (char_length(id) between 1 and 255),
     value jsonb not null,
@@ -27,299 +27,96 @@ public class PgKeyValueDB
     updated timestamptz,
     expires timestamptz,
     primary key (pid, id)
-)")
-            .ExecuteNonQuery();
-        dataSource.CreateCommand($@"create index if not exists {tableName}_created_idx on {tableName} (created)")
-            .ExecuteNonQuery();
-        dataSource.CreateCommand($@"create index if not exists {tableName}_updated_idx on {tableName} (updated) where updated is not null")
-            .ExecuteNonQuery();
-        dataSource.CreateCommand($@"create index if not exists {tableName}_expires_idx on {tableName} (expires) where expires is not null")
-            .ExecuteNonQuery();
+)", prepare: false);
+        dataSource.Execute($@"create index if not exists {tableName}_created_idx on {tableName} (created)", prepare: false);
+        dataSource.Execute($@"create index if not exists {tableName}_updated_idx on {tableName} (updated) where updated is not null", prepare: false);
+        dataSource.Execute($@"create index if not exists {tableName}_expires_idx on {tableName} (expires) where expires is not null", prepare: false);
     }
 
-    private NpgsqlCommand CreateCreateCommand<T>(NpgsqlConnection conn, string pid, string id, T value, DateTimeOffset? expires) =>
-        new($"insert into {tableName} (pid, id, value, created, expires) values ($1, $2, $3, now(), $4)", conn)
-        {
-            Parameters =
-            {
-                new() { Value = pid },
-                new() { Value = id },
-                new() { Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb },
-                new() { Value = (object?) expires ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.TimestampTz }
-            }
-        };
-
-    public bool Create<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
+    static NpgsqlParameter[] CreateParams(string pid, string? id = null)
     {
-        using var conn = dataSource.OpenConnection();
-        using var cmd = CreateCreateCommand(conn, pid, id, value, expires);
-        cmd.Prepare();
-        try
+        var list = new List<NpgsqlParameter> { new() { Value = pid } };
+        if (id != null)
+            list.Add(new() { Value = id });
+        return [.. list];
+    }
+    static NpgsqlParameter[] CreateParams(string pid, long limit)
+    {
+        var list = new List<NpgsqlParameter> { new() { Value = pid }, new() { Value = limit } };
+        return [.. list];
+    }
+    static NpgsqlParameter[] CreateParams<T>(string pid, string? id, T? value, DateTimeOffset? expires)
+    {
+        var list = new List<NpgsqlParameter> { new() { Value = pid } };
+        if (id != null)
+            list.Add(new() { Value = id });
+        if (value != null)
         {
-            cmd.ExecuteNonQuery();
+            list.Add(new() { Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb });
+            list.Add(new() { Value = (object?)expires ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.TimestampTz });
         }
-        catch (PostgresException e)
-        {
-            if (e.SqlState == PostgresErrorCodes.UniqueViolation)
-                return false;
-            else throw;
-        }
-        return true;
+        return [.. list];
     }
 
-    public async Task<bool> CreateAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
-    {
-        using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateCreateCommand(conn, pid, id, value, expires);
-        await cmd.PrepareAsync();
-        try
-        {
-            await cmd.ExecuteNonQueryAsync();
-        }
-        catch (PostgresException e)
-        {
-            if (e.SqlState == PostgresErrorCodes.UniqueViolation)
-                return false;
-            else throw;
-        }
-        return true;
-    }
+    string SelectSql =>
+        $"select value from {tableName} where pid = $1 and id = $2 and (expires is null or now() < expires)";
+    string SelectSetSql =>
+        $"select value from {tableName} where pid = $1 and (expires is null or now() < expires) limit $2";
+    string CreateCreateSql =>
+        $"insert into {tableName} (pid, id, value, created, expires) values ($1, $2, $3, now(), $4)";
+    string UpdateSql =>
+        $"update {tableName} set value = $3, updated = now(), expires = $4 where pid = $1 and id = $2";
+    string UpsertSql =>
+        $"insert into {tableName} (pid, id, value, created, expires) values ($1, $2, $3, now(), $4) on conflict (pid, id) do update set value = $3, updated = now(), expires = $4";
+    string DeleteSql =>
+        $"delete from {tableName} where pid = $1 and id = $2";
+    string DeleteAllSql =>
+        $"delete from {tableName} where pid = $1";
+    string DeleteAllExpiredSql =>
+        $"delete from {tableName} where pid = $1 and now() >= expires";
+    string ExistsSql =>
+        $"select exists(select 1 from {tableName} where pid = $1 and id = $2 and (expires is null or now() < expires))";
+    string CountSql =>
+        $"select count(1) from {tableName} where pid = $1 and (expires is null or now() < expires)";
 
-    private NpgsqlCommand CreateUpdateCommand<T>(NpgsqlConnection conn, string pid, string id, T value, DateTimeOffset? expires) =>
-        new($"update {tableName} set value = $3, updated = now(), expires = $4 where pid = $1 and id = $2", conn)
-        {
-            Parameters =
-            {
-                new() { Value = pid },
-                new() { Value = id },
-                new() { Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb },
-                new() { Value = (object?) expires ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.TimestampTz }
-            }
-        };
-
-    public bool Update<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
-    {
-        using var conn = dataSource.OpenConnection();
-        using var cmd = CreateUpdateCommand(conn, pid, id, value, expires);
-        cmd.Prepare();
-        return cmd.ExecuteNonQuery() > 0;
-    }
-
-    public async Task<bool> UpdateAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
-    {
-        using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateUpdateCommand(conn, pid, id, value, expires);
-        await cmd.PrepareAsync();
-        return await cmd.ExecuteNonQueryAsync() > 0;
-    }
-
-    private NpgsqlCommand CreateUpsertCommand<T>(NpgsqlConnection conn, string pid, string id, T value, DateTimeOffset? expires) =>
-        new($"insert into {tableName} (pid, id, value, created, expires) values ($1, $2, $3, now(), $4) on conflict (pid, id) do update set value = $3, updated = now(), expires = $4", conn)
-        {
-            Parameters =
-            {
-                new() { Value = pid },
-                new() { Value = id },
-                new() { Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb },
-                new() { Value = (object?) expires ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.TimestampTz }
-            }
-        };
-
-    public void Upsert<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
-    {
-        using var conn = dataSource.OpenConnection();
-        using var cmd = CreateUpsertCommand(conn, pid, id, value, expires);
-        cmd.Prepare();
-        cmd.ExecuteNonQuery();
-    }
-
-    public async Task UpsertAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null)
-    {
-        using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateUpsertCommand(conn, pid, id, value, expires);
-        await cmd.PrepareAsync();
-        await cmd.ExecuteNonQueryAsync();
-    }
-
-    private NpgsqlCommand CreateRemoveCommand(NpgsqlConnection conn, string pid, string id) =>
-        new($"delete from {tableName} where pid = $1 and id = $2", conn)
-        {
-            Parameters = { new() { Value = pid }, new() { Value = id } }
-        };
-
-    public bool Remove(string id, string pid = DEFAULT_PID)
-    {
-        using var conn = dataSource.OpenConnection();
-        using var cmd = CreateRemoveCommand(conn, pid, id);
-        cmd.Prepare();
-        return cmd.ExecuteNonQuery() > 0;
-    }
-
-    public async Task<bool> RemoveAsync(string id, string pid = DEFAULT_PID)
-    {
-        using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateRemoveCommand(conn, pid, id);
-        await cmd.PrepareAsync();
-        return await cmd.ExecuteNonQueryAsync() > 0;
-    }
-
-    private NpgsqlCommand CreateRemoveAllCommand(NpgsqlConnection conn, string pid) =>
-        new($"delete from {tableName} where pid = $1", conn)
-        {
-            Parameters = { new() { Value = pid } }
-        };
-
-    public int RemoveAll(string pid = DEFAULT_PID)
-    {
-        using var conn = dataSource.OpenConnection();
-        using var cmd = CreateRemoveAllCommand(conn, pid);
-        cmd.Prepare();
-        return cmd.ExecuteNonQuery();
-    }
-
-    public async Task<int> RemoveAllAsync(string pid = DEFAULT_PID)
-    {
-        using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateRemoveAllCommand(conn, pid);
-        await cmd.PrepareAsync();
-        return await cmd.ExecuteNonQueryAsync();
-    }
-
-    private NpgsqlCommand CreateRemoveAllExpiredCommand(NpgsqlConnection conn, string pid) =>
-        new($"delete from {tableName} where pid = $1 and now() >= expires", conn)
-        {
-            Parameters = { new() { Value = pid } }
-        };
-
-    public int RemoveAllExpired(string pid = DEFAULT_PID)
-    {
-        using var conn = dataSource.OpenConnection();
-        using var cmd = CreateRemoveAllExpiredCommand(conn, pid);
-        cmd.Prepare();
-        return cmd.ExecuteNonQuery();
-    }
-
-    public async Task<int> RemoveAllExpiredAsync(string pid = DEFAULT_PID)
-    {
-        using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateRemoveAllExpiredCommand(conn, pid);
-        await cmd.PrepareAsync();
-        return await cmd.ExecuteNonQueryAsync();
-    }
-
-    private NpgsqlCommand CreateGetCommand(NpgsqlConnection conn, string pid, string id) =>
-        new($"select value from {tableName} where pid = $1 and id = $2 and (expires is null or now() < expires)", conn)
-        {
-            Parameters = { new() { Value = pid }, new() { Value = id } }
-        };
-
-    public T? Get<T>(string id, string pid = DEFAULT_PID)
-    {
-        using var conn = dataSource.OpenConnection();
-        using var cmd = CreateGetCommand(conn, pid, id);
-        cmd.Prepare();
-        using var reader = cmd.ExecuteReader();
-        if (!reader.Read())
-            return default;
-        var value = reader.GetFieldValue<T>(0);
-        return value;
-    }
-
-    public async Task<T?> GetAsync<T>(string id, string pid = DEFAULT_PID)
-    {
-        using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateGetCommand(conn, pid, id);
-        await cmd.PrepareAsync();
-        using var reader = await cmd.ExecuteReaderAsync();
-        if (!await reader.ReadAsync())
-            return default;
-        var value = await reader.GetFieldValueAsync<T>(0);
-        return value;
-    }
-
-    private NpgsqlCommand CreateGetHashSetCommand(NpgsqlConnection conn, string pid, long limit) =>
-        new($"select value from {tableName} where pid = $1 and (expires is null or now() < expires) limit $2", conn)
-        {
-            Parameters = { new() { Value = pid }, new() { Value = limit } }
-        };
-
-    public HashSet<T> GetHashSet<T>(string pid = DEFAULT_PID, long limit = 0)
-    {
-        using var conn = dataSource.OpenConnection();
-        using var cmd = CreateGetHashSetCommand(conn, pid, limit);
-        cmd.Prepare();
-        using var reader = cmd.ExecuteReader();
-        var set = new HashSet<T>();
-        while (reader.Read())
-            set.Add(reader.GetFieldValue<T>(0));
-        return set;
-    }
-
-    public async Task<HashSet<T>> GetHashSetAsync<T>(string pid = DEFAULT_PID, long limit = 0)
-    {
-        using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateGetHashSetCommand(conn, pid, limit);
-        await cmd.PrepareAsync();
-        using var reader = await cmd.ExecuteReaderAsync();
-        var set = new HashSet<T>();
-        while (await reader.ReadAsync())
-            set.Add(await reader.GetFieldValueAsync<T>(0));
-        return set;
-    }
-
-    private NpgsqlCommand CreateExistsCommand(NpgsqlConnection conn, string pid, string id) =>
-        new($"select exists(select 1 from {tableName} where pid = $1 and id = $2 and (expires is null or now() < expires))", conn)
-        {
-            Parameters = { new() { Value = pid }, new() { Value = id } }
-        };
-
-    public bool Exists(string id, string pid = DEFAULT_PID)
-    {
-        using var conn = dataSource.OpenConnection();
-        using var cmd = CreateExistsCommand(conn, pid, id);
-        cmd.Prepare();
-        using var reader = cmd.ExecuteReader();
-        reader.Read();
-        var value = reader.GetBoolean(0);
-        return value;
-    }
-
-    public async Task<bool> ExistsAsync(string id, string pid = DEFAULT_PID)
-    {
-        using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateExistsCommand(conn, pid, id);
-        await cmd.PrepareAsync();
-        using var reader = await cmd.ExecuteReaderAsync();
-        await reader.ReadAsync();
-        var value = reader.GetBoolean(0);
-        return value;
-    }
-
-    private NpgsqlCommand CreateCountCommand(NpgsqlConnection conn, string pid) =>
-        new($"select count(1) from {tableName} where pid = $1 and (expires is null or now() < expires)", conn)
-        {
-            Parameters = { new() { Value = pid } }
-        };
-
-    public long Count(string pid = DEFAULT_PID)
-    {
-        using var conn = dataSource.OpenConnection();
-        using var cmd = CreateCountCommand(conn, pid);
-        cmd.Prepare();
-        using var reader = cmd.ExecuteReader();
-        reader.Read();
-        var value = reader.GetInt64(0);
-        return value;
-    }
-
-    public async Task<long> CountAsync(string pid = DEFAULT_PID)
-    {
-        using var conn = await dataSource.OpenConnectionAsync();
-        using var cmd = CreateCountCommand(conn, pid);
-        await cmd.PrepareAsync();
-        using var reader = await cmd.ExecuteReaderAsync();
-        await reader.ReadAsync();
-        var value = reader.GetInt64(0);
-        return value;
-    }
+    public bool Create<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null) =>
+        dataSource.Execute(CreateCreateSql, CreateParams(pid, id, value, expires)) > 0;
+    public async Task<bool> CreateAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null) =>
+        await dataSource.ExecuteAsync(CreateCreateSql, CreateParams(pid, id, value, expires)) > 0;
+    public bool Update<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null) =>
+        dataSource.Execute(UpdateSql, CreateParams(pid, id, value, expires)) > 0;
+    public async Task<bool> UpdateAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null) =>
+        await dataSource.ExecuteAsync(UpdateSql, CreateParams(pid, id, value, expires)) > 0;
+    public bool Upsert<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null) =>
+        dataSource.Execute(UpsertSql, CreateParams(pid, id, value, expires)) > 0;
+    public async Task<bool> UpsertAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null) =>
+        await dataSource.ExecuteAsync(UpsertSql, CreateParams(pid, id, value, expires)) > 0;
+    public bool Remove(string id, string pid = DEFAULT_PID) =>
+        dataSource.Execute(DeleteSql, CreateParams(pid, id)) > 0;
+    public async Task<bool> RemoveAsync(string id, string pid = DEFAULT_PID) =>
+        await dataSource.ExecuteAsync(DeleteSql, CreateParams(pid, id)) > 0;
+    public int RemoveAll(string pid = DEFAULT_PID) =>
+        dataSource.Execute(DeleteAllSql, CreateParams(pid));
+    public async Task<int> RemoveAllAsync(string pid = DEFAULT_PID) =>
+        await dataSource.ExecuteAsync(DeleteAllSql, CreateParams(pid));
+    public int RemoveAllExpired(string pid = DEFAULT_PID) =>
+        dataSource.Execute(DeleteAllExpiredSql, CreateParams(pid));
+    public async Task<int> RemoveAllExpiredAsync(string pid = DEFAULT_PID) =>
+        await dataSource.ExecuteAsync(DeleteAllExpiredSql, CreateParams(pid));
+    public T? Get<T>(string id, string pid = DEFAULT_PID) =>
+        dataSource.Execute<T>(SelectSql, CreateParams(pid, id));
+    public async Task<T?> GetAsync<T>(string id, string pid = DEFAULT_PID) =>
+        await dataSource.ExecuteAsync<T>(SelectSql, CreateParams(pid, id));
+    public HashSet<T> GetHashSet<T>(string pid = DEFAULT_PID, long limit = 0) =>
+        dataSource.ExecuteSet<T>(SelectSetSql, CreateParams(pid, limit));
+    public async Task<HashSet<T>> GetHashSetAsync<T>(string pid = DEFAULT_PID, long limit = 0) =>
+        await dataSource.ExecuteSetAsync<T>(SelectSetSql, CreateParams(pid, limit));
+    public bool Exists(string id, string pid = DEFAULT_PID) =>
+        dataSource.Execute<bool>(ExistsSql, CreateParams(pid, id));
+    public async Task<bool> ExistsAsync(string id, string pid = DEFAULT_PID) =>
+        await dataSource.ExecuteAsync<bool>(ExistsSql, CreateParams(pid, id));
+    public long Count(string pid = DEFAULT_PID) =>
+        dataSource.Execute<long>(CountSql, CreateParams(pid));
+    public async Task<long> CountAsync(string pid = DEFAULT_PID) =>
+        await dataSource.ExecuteAsync<long>(CountSql, CreateParams(pid));
 }
