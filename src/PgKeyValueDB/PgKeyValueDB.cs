@@ -40,9 +40,13 @@ public class PgKeyValueDB
             list.Add(new() { Value = id });
         return [.. list];
     }
-    static NpgsqlParameter[] CreateParams(string pid, long limit)
+    static NpgsqlParameter[] CreateParams(string pid, long? limit)
     {
-        var list = new List<NpgsqlParameter> { new() { Value = pid }, new() { Value = limit } };
+        var list = new List<NpgsqlParameter>
+        {
+            new() { Value = pid },
+            new() { Value = limit != null ? limit : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint }
+        };
         return [.. list];
     }
     static NpgsqlParameter[] CreateParams<T>(string pid, string? id, T? value, DateTimeOffset? expires)
@@ -107,9 +111,9 @@ public class PgKeyValueDB
         dataSource.Execute<T>(SelectSql, CreateParams(pid, id));
     public async Task<T?> GetAsync<T>(string id, string pid = DEFAULT_PID) =>
         await dataSource.ExecuteAsync<T>(SelectSql, CreateParams(pid, id));
-    public HashSet<T> GetHashSet<T>(string pid = DEFAULT_PID, long limit = 0) =>
+    public HashSet<T> GetHashSet<T>(string pid = DEFAULT_PID, long? limit = null) =>
         dataSource.ExecuteSet<T>(SelectSetSql, CreateParams(pid, limit));
-    public async Task<HashSet<T>> GetHashSetAsync<T>(string pid = DEFAULT_PID, long limit = 0) =>
+    public async Task<HashSet<T>> GetHashSetAsync<T>(string pid = DEFAULT_PID, long? limit = null) =>
         await dataSource.ExecuteSetAsync<T>(SelectSetSql, CreateParams(pid, limit));
     public bool Exists(string id, string pid = DEFAULT_PID) =>
         dataSource.Execute<bool>(ExistsSql, CreateParams(pid, id));

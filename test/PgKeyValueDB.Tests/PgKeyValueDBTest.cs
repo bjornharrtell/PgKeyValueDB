@@ -108,4 +108,16 @@ public class PgKeyValueDBTest
         var result = kv.Update(key, new Poco { Value = key }, pid);
         Assert.IsFalse(result);
     }
+
+    [TestMethod]
+    public void GetHashSetTest()
+    {
+        var key1 = nameof(GetHashSetTest) + "1";
+        var key2 = nameof(GetHashSetTest) + "2";
+        var pid = nameof(GetHashSetTest);
+        kv.Upsert(key1, new Poco { Value = key1 }, pid);
+        kv.Upsert(key2, new Poco { Value = key2 }, pid);
+        var set1 = kv.GetHashSet<Poco>(pid);
+        Assert.AreEqual(2, set1.Count);
+    }
 }
