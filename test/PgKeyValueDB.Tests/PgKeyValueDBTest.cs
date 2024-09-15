@@ -10,7 +10,8 @@ public class PgKeyValueDBTest
     private static PgKeyValueDB kv = null!;
 
     [ClassInitialize]
-    public static void ClassInit(TestContext context) {
+    public static void ClassInit(TestContext context)
+    {
         IServiceCollection services = new ServiceCollection();
         pg = new PgServer("16.2.0", clearWorkingDirOnStart: true, clearInstanceDirOnStop: true);
         pg.Start();
@@ -20,7 +21,8 @@ public class PgKeyValueDBTest
     }
 
     [ClassCleanup()]
-    public static void ClassCleanup() {
+    public static void ClassCleanup()
+    {
         pg?.Stop();
         pg?.Dispose();
     }
