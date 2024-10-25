@@ -76,23 +76,7 @@ static class NpgsqlDataSourceExtensions
         return value;
     }
 
-    internal static HashSet<T> ExecuteSet<T>(this NpgsqlDataSource dataSource, string sql, NpgsqlParameter[]? parameters = null, bool prepare = true)
-    {
-        using var conn = dataSource.OpenConnection();
-        using var cmd = new NpgsqlCommand(sql, conn);
-        if (parameters != null)
-            foreach (var parameter in parameters)
-                cmd.Parameters.Add(parameter);
-        if (prepare)
-            cmd.Prepare();
-        using var reader = cmd.ExecuteReader();
-        var set = new HashSet<T>();
-        while (reader.Read())
-            set.Add(reader.GetFieldValue<T>(0));
-        return set;
-    }
-
-    internal static async Task<HashSet<T>> ExecuteSetAsync<T>(this NpgsqlDataSource dataSource, string sql, NpgsqlParameter[]? parameters = null, bool prepare = true)
+    internal static async IAsyncEnumerable<T> ExecuteListAsync<T>(this NpgsqlDataSource dataSource, string sql, NpgsqlParameter[]? parameters = null, bool prepare = true)
     {
         await using var conn = await dataSource.OpenConnectionAsync();
         await using var cmd = new NpgsqlCommand(sql, conn);
@@ -102,9 +86,7 @@ static class NpgsqlDataSourceExtensions
         if (prepare)
             cmd.Prepare();
         await using var reader = await cmd.ExecuteReaderAsync();
-        var set = new HashSet<T>();
         while (reader.Read())
-            set.Add(reader.GetFieldValue<T>(0));
-        return set;
+            yield return reader.GetFieldValue<T>(0);
     }
 }

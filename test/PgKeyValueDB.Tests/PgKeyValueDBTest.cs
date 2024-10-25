@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using MysticMind.PostgresEmbed;
+using SharpCompress;
 
 namespace Wololo.PgKeyValueDB.Tests;
 
@@ -113,14 +114,34 @@ public class PgKeyValueDBTest
     }
 
     [TestMethod]
-    public void GetHashSetTest()
+    public void GetListTest()
     {
-        var key1 = nameof(GetHashSetTest) + "1";
-        var key2 = nameof(GetHashSetTest) + "2";
-        var pid = nameof(GetHashSetTest);
+        var key1 = nameof(GetListTest) + "1";
+        var key2 = nameof(GetListTest) + "2";
+        var pid = nameof(GetListTest);
         kv.Upsert(key1, new Poco { Value = key1 }, pid);
         kv.Upsert(key2, new Poco { Value = key2 }, pid);
-        var set1 = kv.GetHashSet<Poco>(pid);
-        Assert.AreEqual(2, set1.Count);
+        var list1 = kv.GetListAsync<Poco>(pid).ToBlockingEnumerable().ToList();
+        Assert.AreEqual(2, list1.Count);
+    }
+
+    [TestMethod]
+    public void GetListOffsetTest()
+    {
+        var key1 = nameof(GetListOffsetTest) + "1";
+        var key2 = nameof(GetListOffsetTest) + "2";
+        var key3 = nameof(GetListOffsetTest) + "3";
+        var key4 = nameof(GetListOffsetTest) + "4";
+        var pid = nameof(GetListOffsetTest);
+        kv.Upsert(key1, new Poco { Value = key1 }, pid);
+        kv.Upsert(key2, new Poco { Value = key2 }, pid);
+        kv.Upsert(key3, new Poco { Value = key3 }, pid);
+        kv.Upsert(key4, new Poco { Value = key4 }, pid);
+        var list1 = kv.GetListAsync<Poco>(pid, 2, 1).ToBlockingEnumerable().ToList();
+        Assert.AreEqual(2, list1.Count);
+        Assert.AreEqual(nameof(GetListOffsetTest) + "2", list1[0].Value);
+        var list2 = kv.GetListAsync<Poco>(pid, 2, 3).ToBlockingEnumerable().ToList();
+        Assert.AreEqual(1, list2.Count);
+        Assert.AreEqual(nameof(GetListOffsetTest) + "4", list2[0].Value);
     }
 }

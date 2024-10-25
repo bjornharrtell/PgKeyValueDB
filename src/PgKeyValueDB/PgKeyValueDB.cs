@@ -45,12 +45,13 @@ public class PgKeyValueDB
             list.Add(new() { Value = id });
         return [.. list];
     }
-    static NpgsqlParameter[] CreateParams(string pid, long? limit)
+    static NpgsqlParameter[] CreateParams(string pid, long? limit, long? offset)
     {
         var list = new List<NpgsqlParameter>
         {
             new() { Value = pid },
-            new() { Value = limit != null ? limit : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint }
+            new() { Value = limit != null ? limit : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint },
+            new() { Value = offset != null ? offset : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint }
         };
         return [.. list];
     }
@@ -69,8 +70,8 @@ public class PgKeyValueDB
 
     string SelectSql =>
         $"select value from {tableRef} where pid = $1 and id = $2 and (expires is null or now() < expires)";
-    string SelectSetSql =>
-        $"select value from {tableRef} where pid = $1 and (expires is null or now() < expires) limit $2";
+    string SelectListSql =>
+        $"select value from {tableRef} where pid = $1 and (expires is null or now() < expires) limit $2 offset $3";
     string CreateCreateSql =>
         $"insert into {tableRef} (pid, id, value, created, expires) values ($1, $2, $3, now(), $4)";
     string UpdateSql =>
@@ -116,10 +117,8 @@ public class PgKeyValueDB
         dataSource.Execute<T>(SelectSql, CreateParams(pid, id));
     public async Task<T?> GetAsync<T>(string id, string pid = DEFAULT_PID) =>
         await dataSource.ExecuteAsync<T>(SelectSql, CreateParams(pid, id));
-    public HashSet<T> GetHashSet<T>(string pid = DEFAULT_PID, long? limit = null) =>
-        dataSource.ExecuteSet<T>(SelectSetSql, CreateParams(pid, limit));
-    public async Task<HashSet<T>> GetHashSetAsync<T>(string pid = DEFAULT_PID, long? limit = null) =>
-        await dataSource.ExecuteSetAsync<T>(SelectSetSql, CreateParams(pid, limit));
+    public IAsyncEnumerable<T> GetListAsync<T>(string pid = DEFAULT_PID, long? limit = null, long? offset = null) =>
+        dataSource.ExecuteListAsync<T>(SelectListSql, CreateParams(pid, limit, offset));
     public bool Exists(string id, string pid = DEFAULT_PID) =>
         dataSource.Execute<bool>(ExistsSql, CreateParams(pid, id));
     public async Task<bool> ExistsAsync(string id, string pid = DEFAULT_PID) =>
