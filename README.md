@@ -20,7 +20,9 @@ services.AddPgKeyValueDB(connectionString);
 
 You can then inject `PgKeyValueDB` as constructor parameter where you need it.
 
-The `PgKeyValueDB` instance offers basic API to do `Create`, `Update`, `Upsert`, `Get` and `Remove` operations with optional partition key and expiration.
+The `PgKeyValueDB` instance offers basic API to do `Create`, `Update`, `Upsert`, `Get`, `Exists`, and `Remove` operations (and async variants) with optional partition key and expiration.
+
+Additional API a `GetListAsync`, `Count` and `RemoveAll` with Linq expression filtering support. For large partitions it's recommended to create manual indexes for specific expressions.
 
 ## FAQ
 
