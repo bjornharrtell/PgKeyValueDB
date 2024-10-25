@@ -1,5 +1,7 @@
 # PgKeyValueDB
 
+![NuGet Version](https://img.shields.io/nuget/v/PgKeyValueDB)
+
 ## Introduction
 
 A simple as possible document database abstraction and implementation using PostgreSQL.
