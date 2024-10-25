@@ -1,17 +1,19 @@
 using Npgsql;
 
-static class NpgsqlDataSourceExtensions
+internal static class NpgsqlDataSourceExtensions
 {
-    internal static int Execute(this NpgsqlDataSource dataSource, string sql, NpgsqlParameter[]? parameters = null, bool prepare = true)
+    public record struct NpgsqlCommandContext(string Sql, IEnumerable<NpgsqlParameter>? Parameters = null, bool Prepare = true);
+
+    internal static int Execute(this NpgsqlDataSource dataSource, NpgsqlCommandContext context)
     {
         try
         {
             using var conn = dataSource.OpenConnection();
-            using var cmd = new NpgsqlCommand(sql, conn);
-            if (parameters != null)
-                foreach (var parameter in parameters)
+            using var cmd = new NpgsqlCommand(context.Sql, conn);
+            if (context.Parameters != null)
+                foreach (var parameter in context.Parameters)
                     cmd.Parameters.Add(parameter);
-            if (prepare)
+            if (context.Prepare)
                 cmd.Prepare();
             return cmd.ExecuteNonQuery();
         }
@@ -23,16 +25,16 @@ static class NpgsqlDataSourceExtensions
         }
     }
 
-    internal static async Task<int> ExecuteAsync(this NpgsqlDataSource dataSource, string sql, NpgsqlParameter[]? parameters = null, bool prepare = true)
+    internal static async Task<int> ExecuteAsync(this NpgsqlDataSource dataSource, NpgsqlCommandContext context)
     {
         try
         {
             await using var conn = await dataSource.OpenConnectionAsync();
-            await using var cmd = new NpgsqlCommand(sql, conn);
-            if (parameters != null)
-                foreach (var parameter in parameters)
+            await using var cmd = new NpgsqlCommand(context.Sql, conn);
+            if (context.Parameters != null)
+                foreach (var parameter in context.Parameters)
                     cmd.Parameters.Add(parameter);
-            if (prepare)
+            if (context.Prepare)
                 await cmd.PrepareAsync();
             return await cmd.ExecuteNonQueryAsync();
         }
@@ -44,14 +46,14 @@ static class NpgsqlDataSourceExtensions
         }
     }
 
-    internal static T? Execute<T>(this NpgsqlDataSource dataSource, string sql, NpgsqlParameter[]? parameters = null, bool prepare = true)
+    internal static T? Execute<T>(this NpgsqlDataSource dataSource, NpgsqlCommandContext context)
     {
         using var conn = dataSource.OpenConnection();
-        using var cmd = new NpgsqlCommand(sql, conn);
-        if (parameters != null)
-            foreach (var parameter in parameters)
+        using var cmd = new NpgsqlCommand(context.Sql, conn);
+        if (context.Parameters != null)
+            foreach (var parameter in context.Parameters)
                 cmd.Parameters.Add(parameter);
-        if (prepare)
+        if (context.Prepare)
             cmd.Prepare();
         using var reader = cmd.ExecuteReader();
         if (!reader.Read())
@@ -60,14 +62,14 @@ static class NpgsqlDataSourceExtensions
         return value;
     }
 
-    internal static async Task<T?> ExecuteAsync<T>(this NpgsqlDataSource dataSource, string sql, NpgsqlParameter[]? parameters = null, bool prepare = true)
+    internal static async Task<T?> ExecuteAsync<T>(this NpgsqlDataSource dataSource, NpgsqlCommandContext context)
     {
         await using var conn = await dataSource.OpenConnectionAsync();
-        await using var cmd = new NpgsqlCommand(sql, conn);
-        if (parameters != null)
-            foreach (var parameter in parameters)
+        await using var cmd = new NpgsqlCommand(context.Sql, conn);
+        if (context.Parameters != null)
+            foreach (var parameter in context.Parameters)
                 cmd.Parameters.Add(parameter);
-        if (prepare)
+        if (context.Prepare)
             cmd.Prepare();
         await using var reader = await cmd.ExecuteReaderAsync();
         if (!await reader.ReadAsync())
@@ -76,14 +78,14 @@ static class NpgsqlDataSourceExtensions
         return value;
     }
 
-    internal static async IAsyncEnumerable<T> ExecuteListAsync<T>(this NpgsqlDataSource dataSource, string sql, NpgsqlParameter[]? parameters = null, bool prepare = true)
+    internal static async IAsyncEnumerable<T> ExecuteListAsync<T>(this NpgsqlDataSource dataSource, NpgsqlCommandContext context)
     {
         await using var conn = await dataSource.OpenConnectionAsync();
-        await using var cmd = new NpgsqlCommand(sql, conn);
-        if (parameters != null)
-            foreach (var parameter in parameters)
+        await using var cmd = new NpgsqlCommand(context.Sql, conn);
+        if (context.Parameters != null)
+            foreach (var parameter in context.Parameters)
                 cmd.Parameters.Add(parameter);
-        if (prepare)
+        if (context.Prepare)
             cmd.Prepare();
         await using var reader = await cmd.ExecuteReaderAsync();
         while (reader.Read())
