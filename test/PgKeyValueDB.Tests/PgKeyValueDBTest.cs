@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using MysticMind.PostgresEmbed;
-using SharpCompress;
 
 namespace Wololo.PgKeyValueDB.Tests;
 
@@ -16,7 +15,8 @@ public class PgKeyValueDBTest
         IServiceCollection services = new ServiceCollection();
         pg = new PgServer("16.2.0", clearWorkingDirOnStart: true, clearInstanceDirOnStop: true);
         pg.Start();
-        services.AddPgKeyValueDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres", b => {
+        services.AddPgKeyValueDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres", b =>
+        {
             b.SchemaName = "pgkeyvaluetest";
             b.TableName = "pgkeyvaluetest";
         });
@@ -137,11 +137,127 @@ public class PgKeyValueDBTest
         kv.Upsert(key2, new Poco { Value = key2 }, pid);
         kv.Upsert(key3, new Poco { Value = key3 }, pid);
         kv.Upsert(key4, new Poco { Value = key4 }, pid);
-        var list1 = kv.GetListAsync<Poco>(pid, 2, 1).ToBlockingEnumerable().ToList();
+        var list1 = kv.GetListAsync<Poco>(pid, null, 2, 1).ToBlockingEnumerable().ToList();
         Assert.AreEqual(2, list1.Count);
         Assert.AreEqual(nameof(GetListOffsetTest) + "2", list1[0].Value);
-        var list2 = kv.GetListAsync<Poco>(pid, 2, 3).ToBlockingEnumerable().ToList();
+        var list2 = kv.GetListAsync<Poco>(pid, null, 2, 3).ToBlockingEnumerable().ToList();
         Assert.AreEqual(1, list2.Count);
         Assert.AreEqual(nameof(GetListOffsetTest) + "4", list2[0].Value);
+    }
+
+    [TestMethod]
+    public void GetListFilterTest()
+    {
+        var key1 = nameof(GetListFilterTest) + "1";
+        var key2 = nameof(GetListFilterTest) + "2";
+        var pid = nameof(GetListFilterTest);
+        kv.Upsert(key1, new Poco { Value = key1 }, pid);
+        kv.Upsert(key2, new Poco { Value = key2 }, pid);
+        var list1 = kv.GetListAsync<Poco>(pid, p => p.Value == nameof(GetListFilterTest) + "2").ToBlockingEnumerable().ToList();
+        Assert.AreEqual(1, list1.Count);
+    }
+
+    [TestMethod]
+    public void GetListFilterStartsWithTest()
+    {
+        var key1 = nameof(GetListFilterStartsWithTest) + "1";
+        var key2 = nameof(GetListFilterStartsWithTest) + "2";
+        var pid = nameof(GetListFilterStartsWithTest);
+        kv.Upsert(key1, new Poco { Value = key1 }, pid);
+        kv.Upsert(key2, new Poco { Value = key2 }, pid);
+        var list1 = kv.GetListAsync<Poco>(pid, p => p.Value!.StartsWith(nameof(GetListFilterStartsWithTest))).ToBlockingEnumerable().ToList();
+        Assert.AreEqual(2, list1.Count);
+    }
+
+    [TestMethod]
+    public void CountFilterTest()
+    {
+        var key1 = nameof(CountFilterTest) + "1";
+        var key2 = nameof(CountFilterTest) + "2";
+        var key3 = nameof(CountFilterTest) + "3";
+        var pid = nameof(CountFilterTest);
+
+        kv.Upsert(key1, new Poco { Value = key1 }, pid);
+        kv.Upsert(key2, new Poco { Value = key2 }, pid);
+        kv.Upsert(key3, new Poco { Value = key3 }, pid);
+
+        // Count all
+        var totalCount = kv.Count<Poco>(pid);
+        Assert.AreEqual(3, totalCount);
+
+        // Count with exact match
+        var exactCount = kv.Count<Poco>(pid, p => p.Value == key1);
+        Assert.AreEqual(1, exactCount);
+
+        // Count with prefix match
+        var prefixCount = kv.Count<Poco>(pid, p => p.Value!.StartsWith(nameof(CountFilterTest)));
+        Assert.AreEqual(3, prefixCount);
+    }
+
+    [TestMethod]
+    public async Task CountFilterAsyncTest()
+    {
+        var key1 = nameof(CountFilterAsyncTest) + "1";
+        var key2 = nameof(CountFilterAsyncTest) + "2";
+        var key3 = nameof(CountFilterAsyncTest) + "3";
+        var pid = nameof(CountFilterAsyncTest);
+
+        await kv.UpsertAsync(key1, new Poco { Value = key1 }, pid);
+        await kv.UpsertAsync(key2, new Poco { Value = key2 }, pid);
+        await kv.UpsertAsync(key3, new Poco { Value = key3 }, pid);
+
+        // Count with prefix match async
+        var prefixCount = await kv.CountAsync<Poco>(pid, p => p.Value!.StartsWith(nameof(CountFilterAsyncTest)));
+        Assert.AreEqual(3, prefixCount);
+    }
+
+    [TestMethod]
+    public void RemoveAllFilterTest()
+    {
+        var key1 = nameof(RemoveAllFilterTest) + "1";
+        var key2 = nameof(RemoveAllFilterTest) + "2";
+        var key3 = nameof(RemoveAllFilterTest) + "3";
+        var pid = nameof(RemoveAllFilterTest);
+
+        kv.Upsert(key1, new Poco { Value = key1 }, pid);
+        kv.Upsert(key2, new Poco { Value = key2 }, pid);
+        kv.Upsert(key3, new Poco { Value = key3 }, pid);
+
+        // Remove specific item
+        var removedCount = kv.RemoveAll<Poco>(pid, p => p.Value == key1);
+        Assert.AreEqual(1, removedCount);
+
+        // Verify remaining count
+        var remainingCount = kv.Count<Poco>(pid);
+        Assert.AreEqual(2, remainingCount);
+
+        // Remove remaining items with prefix
+        var remainingRemoved = kv.RemoveAll<Poco>(pid, p => p.Value!.StartsWith(nameof(RemoveAllFilterTest)));
+        Assert.AreEqual(2, remainingRemoved);
+
+        // Verify all gone
+        var finalCount = kv.Count<Poco>(pid);
+        Assert.AreEqual(0, finalCount);
+    }
+
+    [TestMethod]
+    public async Task RemoveAllFilterAsyncTest()
+    {
+        var key1 = nameof(RemoveAllFilterAsyncTest) + "1";
+        var key2 = nameof(RemoveAllFilterAsyncTest) + "2";
+        var key3 = nameof(RemoveAllFilterAsyncTest) + "3";
+        var pid = nameof(RemoveAllFilterAsyncTest);
+
+        await kv.UpsertAsync(key1, new Poco { Value = key1 }, pid);
+        await kv.UpsertAsync(key2, new Poco { Value = key2 }, pid);
+        await kv.UpsertAsync(key3, new Poco { Value = key3 }, pid);
+
+        // Remove with filter async
+        var removedCount = await kv.RemoveAllAsync<Poco>(pid, p => p.Value!.StartsWith(nameof(RemoveAllFilterAsyncTest)));
+        Assert.AreEqual(3, removedCount);
+
+        // Verify all gone
+        var finalCount = await kv.CountAsync<Poco>(pid);
+        Assert.AreEqual(0, finalCount);
     }
 }
