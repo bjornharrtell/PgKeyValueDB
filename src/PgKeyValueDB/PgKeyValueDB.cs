@@ -43,43 +43,43 @@ public class PgKeyValueDB
 
     static IEnumerable<NpgsqlParameter> CreateParams(string pid, string? id = null)
     {
-        var baseParams = new List<NpgsqlParameter> { new() { Value = pid } };
+        var baseParams = new List<NpgsqlParameter> { new() { ParameterName = "pid", Value = pid } };
         if (id != null)
-            baseParams.Add(new() { Value = id });
+            baseParams.Add(new() { ParameterName = "pid", Value = id });
         return baseParams;
     }
 
     static IEnumerable<NpgsqlParameter> CreateParams<T>(string pid, string? id, T? value, DateTimeOffset? expires)
     {
-        var baseParams = new List<NpgsqlParameter> { new() { Value = pid } };
+        var baseParams = new List<NpgsqlParameter> { new() { ParameterName = "pid", Value = pid } };
         if (id != null)
-            baseParams.Add(new() { Value = id });
+            baseParams.Add(new() { ParameterName = "id", Value = id });
         if (value != null)
         {
-            baseParams.Add(new() { Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb });
-            baseParams.Add(new() { Value = (object?)expires ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.TimestampTz });
+            baseParams.Add(new() { ParameterName = "value", Value = value, NpgsqlDbType = NpgsqlDbType.Jsonb });
+            baseParams.Add(new() { ParameterName = "expires", Value = (object?)expires ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.TimestampTz });
         }
         return baseParams;
     }
 
     string SelectSql =>
-        $"select value from {tableRef} where pid = $1 and id = $2 and (expires is null or now() < expires)";
+        $"select value from {tableRef} where pid = @pid and id = @id and (expires is null or now() < expires)";
     string CreateCreateSql =>
-        $"insert into {tableRef} (pid, id, value, created, expires) values ($1, $2, $3, now(), $4)";
+        $"insert into {tableRef} (pid, id, value, created, expires) values (@pid, @id, @value, now(), @expires)";
     string UpdateSql =>
-        $"update {tableRef} set value = $3, updated = now(), expires = $4 where pid = $1 and id = $2";
+        $"update {tableRef} set value = @value, updated = now(), expires = @expires where pid = @pid and id = @id";
     string UpsertSql =>
-        $"insert into {tableRef} (pid, id, value, created, expires) values ($1, $2, $3, now(), $4) on conflict (pid, id) do update set value = $3, updated = now(), expires = $4";
+        $"insert into {tableRef} (pid, id, value, created, expires) values (@pid, @id, @value, now(), @expires) on conflict (pid, id) do update set value = @value, updated = now(), expires = @expires";
     string DeleteSql =>
-        $"delete from {tableRef} where pid = $1 and id = $2";
+        $"delete from {tableRef} where pid = @pid and id = @id";
     string DeleteAllSql =>
-        $"delete from {tableRef} where pid = $1";
+        $"delete from {tableRef} where pid = @pid";
     string DeleteAllExpiredSql =>
-        $"delete from {tableRef} where pid = $1 and now() >= expires";
+        $"delete from {tableRef} where pid = @pid and now() >= expires";
     string ExistsSql =>
-        $"select exists(select 1 from {tableRef} where pid = $1 and id = $2 and (expires is null or now() < expires))";
+        $"select exists(select 1 from {tableRef} where pid = @pid and id = @id and (expires is null or now() < expires))";
     string CountSql =>
-        $"select count(1) from {tableRef} where pid = $1 and (expires is null or now() < expires)";
+        $"select count(1) from {tableRef} where pid = @pid and (expires is null or now() < expires)";
 
     public bool Create<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null) =>
         dataSource.Execute(new Ctx(CreateCreateSql, CreateParams(pid, id, value, expires))) > 0;
