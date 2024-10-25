@@ -137,11 +137,23 @@ public class PgKeyValueDBTest
         kv.Upsert(key2, new Poco { Value = key2 }, pid);
         kv.Upsert(key3, new Poco { Value = key3 }, pid);
         kv.Upsert(key4, new Poco { Value = key4 }, pid);
-        var list1 = kv.GetListAsync<Poco>(pid, 2, 1).ToBlockingEnumerable().ToList();
+        var list1 = kv.GetListAsync<Poco>(pid, null, 2, 1).ToBlockingEnumerable().ToList();
         Assert.AreEqual(2, list1.Count);
         Assert.AreEqual(nameof(GetListOffsetTest) + "2", list1[0].Value);
-        var list2 = kv.GetListAsync<Poco>(pid, 2, 3).ToBlockingEnumerable().ToList();
+        var list2 = kv.GetListAsync<Poco>(pid, null, 2, 3).ToBlockingEnumerable().ToList();
         Assert.AreEqual(1, list2.Count);
         Assert.AreEqual(nameof(GetListOffsetTest) + "4", list2[0].Value);
+    }
+
+    [TestMethod]
+    public void GetListFilterTest()
+    {
+        var key1 = nameof(GetListFilterTest) + "1";
+        var key2 = nameof(GetListFilterTest) + "2";
+        var pid = nameof(GetListFilterTest);
+        kv.Upsert(key1, new Poco { Value = key1 }, pid);
+        kv.Upsert(key2, new Poco { Value = key2 }, pid);
+        var list1 = kv.GetListAsync<Poco>(pid, p => p.Value == nameof(GetListFilterTest) + "2").ToBlockingEnumerable().ToList();
+        Assert.AreEqual(1, list1.Count);
     }
 }
