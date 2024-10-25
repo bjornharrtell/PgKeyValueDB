@@ -39,40 +39,11 @@ public partial class PgKeyValueDB
         dataSource.Execute($@"create index if not exists idx_{schemaName}_{tableName}_expires on {tableRef} (expires) where expires is not null", prepare: false);
     }
 
-    private string BuildSelectListSql<T>(Expression<Func<T, bool>>? where)
-    {
-        var baseSql = $"select value from {tableRef} where pid = @pid and (expires is null or now() < expires)";
-        if (where == null)
-            return baseSql + " limit @limit offset @offset";
-        var visitor = new SqlExpressionVisitor();
-        visitor.Visit(where);
-        var sql = $"{baseSql} AND {visitor.WhereClause} limit @limit offset @offset";
-        return sql;
-    }
-
     static NpgsqlParameter[] CreateParams(string pid, string? id = null)
     {
         var baseParams = new List<NpgsqlParameter> { new() { Value = pid } };
         if (id != null)
             baseParams.Add(new() { Value = id });
-        return [.. baseParams];
-    }
-
-    static NpgsqlParameter[] CreateParams<T>(string pid, Expression<Func<T, bool>>? where, long? limit, long? offset)
-    {
-        var baseParams = new List<NpgsqlParameter>
-        {
-            new() { ParameterName = "pid", Value = pid },
-            new() { ParameterName = "limit", Value = limit != null ? limit : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint },
-            new() { ParameterName = "offset", Value = offset != null ? offset : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint }
-        };
-        if (where == null)
-            return [.. baseParams];
-
-        var visitor = new SqlExpressionVisitor();
-        visitor.Visit(where);
-        baseParams.AddRange(visitor.Parameters);
-
         return [.. baseParams];
     }
 
@@ -136,8 +107,6 @@ public partial class PgKeyValueDB
         dataSource.Execute<T>(SelectSql, CreateParams(pid, id));
     public async Task<T?> GetAsync<T>(string id, string pid = DEFAULT_PID) =>
         await dataSource.ExecuteAsync<T>(SelectSql, CreateParams(pid, id));
-    public IAsyncEnumerable<T> GetListAsync<T>(string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null, long? limit = null, long? offset = null) =>
-        dataSource.ExecuteListAsync<T>(BuildSelectListSql(where), CreateParams(pid, where, limit, offset));
     public bool Exists(string id, string pid = DEFAULT_PID) =>
         dataSource.Execute<bool>(ExistsSql, CreateParams(pid, id));
     public async Task<bool> ExistsAsync(string id, string pid = DEFAULT_PID) =>
@@ -146,4 +115,29 @@ public partial class PgKeyValueDB
         dataSource.Execute<long>(CountSql, CreateParams(pid));
     public async Task<long> CountAsync(string pid = DEFAULT_PID) =>
         await dataSource.ExecuteAsync<long>(CountSql, CreateParams(pid));
+
+    public IAsyncEnumerable<T> GetListAsync<T>(string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null, long? limit = null, long? offset = null)
+    {
+        var sql = $"select value from {tableRef} where pid = @pid and (expires is null or now() < expires)";
+        var baseParams = new List<NpgsqlParameter>
+        {
+            new() { ParameterName = "pid", Value = pid },
+            new() { ParameterName = "limit", Value = limit != null ? limit : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint },
+            new() { ParameterName = "offset", Value = offset != null ? offset : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint }
+        };
+        if (where != null)
+        {
+            var visitor = new SqlExpressionVisitor(typeof(T));
+            visitor.Visit(where);
+            baseParams.AddRange(visitor.Parameters);
+            sql = $"{sql} AND {visitor.WhereClause} limit @limit offset @offset";
+        }
+        else
+        {
+            sql += " limit @limit offset @offset";
+        }
+        var result = dataSource.ExecuteListAsync<T>(sql, [.. baseParams]);
+        return result;
+    }
+
 }
