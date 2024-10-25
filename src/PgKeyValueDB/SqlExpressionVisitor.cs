@@ -121,19 +121,39 @@ internal class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
 
     protected override Expression VisitMember(MemberExpression node)
     {
-        if (node.Expression?.NodeType != ExpressionType.Parameter)
-            throw new NotSupportedException("Only direct property access is supported");
+        // Handle property access on a constant (e.g., accessing a variable in the closure)
+        if (node.Expression?.NodeType == ExpressionType.Constant)
+        {
+            // Compile and evaluate the expression to get the actual value
+            var value = Expression.Lambda(node).Compile().DynamicInvoke();
+            parameterIndex++;
+            var parameter = new NpgsqlParameter
+            {
+                ParameterName = $"p{parameterIndex}",
+                Value = value ?? DBNull.Value,
+                NpgsqlDbType = GetNpgsqlType(node.Type)
+            };
+            parameters.Add(parameter);
+            whereClause.Append($"@{parameter.ParameterName}");
+            return node;
+        }
 
-        var property = node.Member as PropertyInfo;
-        if (property == null)
-            throw new NotSupportedException("Only properties are supported");
+        // Handle property access on the parameter (e.g., p => p.Value)
+        if (node.Expression?.NodeType == ExpressionType.Parameter)
+        {
+            var property = node.Member as PropertyInfo;
+            if (property == null)
+                throw new NotSupportedException("Only properties are supported");
 
-        if (property.DeclaringType != documentType)
-            throw new NotSupportedException("Only properties from the document type are supported");
+            if (property.DeclaringType != documentType)
+                throw new NotSupportedException("Only properties from the document type are supported");
 
-        var path = BuildJsonPath(property);
-        whereClause.Append(path);
-        return node;
+            var path = BuildJsonPath(property);
+            whereClause.Append(path);
+            return node;
+        }
+
+        throw new NotSupportedException($"Unsupported member expression type: {node.Expression?.NodeType}");
     }
 
     private static string BuildJsonPath(PropertyInfo property)
@@ -177,7 +197,6 @@ internal class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
         {
             ParameterName = $"p{parameterIndex}",
             Value = node.Value ?? DBNull.Value,
-            // Let Npgsql handle the type mapping
             NpgsqlDbType = GetNpgsqlType(node.Type)
         };
         parameters.Add(parameter);

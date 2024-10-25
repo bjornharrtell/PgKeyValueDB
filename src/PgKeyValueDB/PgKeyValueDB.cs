@@ -45,7 +45,7 @@ public class PgKeyValueDB
     {
         var baseParams = new List<NpgsqlParameter> { new() { ParameterName = "pid", Value = pid } };
         if (id != null)
-            baseParams.Add(new() { ParameterName = "pid", Value = id });
+            baseParams.Add(new() { ParameterName = "id", Value = id });
         return baseParams;
     }
 
