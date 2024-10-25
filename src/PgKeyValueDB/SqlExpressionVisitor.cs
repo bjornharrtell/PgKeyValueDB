@@ -49,10 +49,69 @@ internal class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
             switch (node.Method.Name)
             {
                 case nameof(string.StartsWith):
-                    Visit(node.Object); // This will be the property
+                    Visit(node.Object);
                     whereClause.Append(" LIKE ");
-                    Visit(node.Arguments[0]); // This will be the prefix
+                    Visit(node.Arguments[0]);
                     whereClause.Append(" || '%'");
+                    return node;
+
+                case nameof(string.EndsWith):
+                    Visit(node.Object);
+                    whereClause.Append(" LIKE '%' || ");
+                    Visit(node.Arguments[0]);
+                    return node;
+
+                case nameof(string.Contains):
+                    Visit(node.Object);
+                    whereClause.Append(" LIKE '%' || ");
+                    Visit(node.Arguments[0]);
+                    whereClause.Append(" || '%'");
+                    return node;
+
+                case nameof(string.ToLower):
+                    whereClause.Append("LOWER(");
+                    Visit(node.Object);
+                    whereClause.Append(")");
+                    return node;
+
+                case nameof(string.ToUpper):
+                    whereClause.Append("UPPER(");
+                    Visit(node.Object);
+                    whereClause.Append(")");
+                    return node;
+
+                case nameof(string.Trim):
+                    whereClause.Append("TRIM(");
+                    Visit(node.Object);
+                    whereClause.Append(")");
+                    return node;
+
+                case nameof(string.TrimStart):
+                    whereClause.Append("LTRIM(");
+                    Visit(node.Object);
+                    whereClause.Append(")");
+                    return node;
+
+                case nameof(string.TrimEnd):
+                    whereClause.Append("RTRIM(");
+                    Visit(node.Object);
+                    whereClause.Append(")");
+                    return node;
+
+                case nameof(string.Replace):
+                    whereClause.Append("REPLACE(");
+                    Visit(node.Object);
+                    whereClause.Append(", ");
+                    Visit(node.Arguments[0]);
+                    whereClause.Append(", ");
+                    Visit(node.Arguments[1]);
+                    whereClause.Append(")");
+                    return node;
+
+                case nameof(string.Length):
+                    whereClause.Append("LENGTH(");
+                    Visit(node.Object);
+                    whereClause.Append(")");
                     return node;
             }
         }
