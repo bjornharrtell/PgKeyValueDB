@@ -20,8 +20,10 @@ public static class NpgsqlServiceCollectionExtensions
 
 public class PgKeyValueDBBuilder(string connectionString, object? serviceKey = null)
 {
-    const string DEFAULT_TABLE_NAME = "npgsql_documentdb";
+    const string DEFAULT_SCHEMA_NAME = "pgkeyvaluedb";
+    const string DEFAULT_TABLE_NAME = "pgkeyvaluedb";
 
+    public string SchemaName { get; set; } = DEFAULT_SCHEMA_NAME;
     public string TableName { get; set; } = DEFAULT_TABLE_NAME;
 
     string CreateTableName() => serviceKey == null ? TableName : $"{TableName}_{serviceKey}";
@@ -30,6 +32,6 @@ public class PgKeyValueDBBuilder(string connectionString, object? serviceKey = n
     {
         var dataSource = new NpgsqlDataSourceBuilder(connectionString).EnableDynamicJson().Build();
         var tableName = CreateTableName();
-        return new PgKeyValueDB(dataSource, tableName);
+        return new PgKeyValueDB(dataSource, SchemaName, tableName);
     }
 }

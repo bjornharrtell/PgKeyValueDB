@@ -15,7 +15,10 @@ public class PgKeyValueDBTest
         IServiceCollection services = new ServiceCollection();
         pg = new PgServer("16.2.0", clearWorkingDirOnStart: true, clearInstanceDirOnStop: true);
         pg.Start();
-        services.AddPgKeyValueDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres");
+        services.AddPgKeyValueDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres", b => {
+            b.SchemaName = "pgkeyvaluetest";
+            b.TableName = "pgkeyvaluetest";
+        });
         var serviceProvider = services.BuildServiceProvider();
         kv = serviceProvider.GetRequiredService<PgKeyValueDB>();
     }
