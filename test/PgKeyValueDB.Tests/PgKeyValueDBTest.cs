@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using MysticMind.PostgresEmbed;
-using SharpCompress;
 
 namespace Wololo.PgKeyValueDB.Tests;
 
@@ -155,5 +154,17 @@ public class PgKeyValueDBTest
         kv.Upsert(key2, new Poco { Value = key2 }, pid);
         var list1 = kv.GetListAsync<Poco>(pid, p => p.Value == nameof(GetListFilterTest) + "2").ToBlockingEnumerable().ToList();
         Assert.AreEqual(1, list1.Count);
+    }
+
+    [TestMethod]
+    public void GetListFilterStartsWithTest()
+    {
+        var key1 = nameof(GetListFilterStartsWithTest) + "1";
+        var key2 = nameof(GetListFilterStartsWithTest) + "2";
+        var pid = nameof(GetListFilterStartsWithTest);
+        kv.Upsert(key1, new Poco { Value = key1 }, pid);
+        kv.Upsert(key2, new Poco { Value = key2 }, pid);
+        var list1 = kv.GetListAsync<Poco>(pid, p => p.Value!.StartsWith(nameof(GetListFilterStartsWithTest))).ToBlockingEnumerable().ToList();
+        Assert.AreEqual(2, list1.Count);
     }
 }

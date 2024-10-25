@@ -4,7 +4,7 @@ using NpgsqlTypes;
 
 namespace Wololo.PgKeyValueDB;
 
-public partial class PgKeyValueDB
+public class PgKeyValueDB
 {
     private readonly NpgsqlDataSource dataSource;
     private readonly string schemaName;

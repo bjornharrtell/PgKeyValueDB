@@ -6,125 +6,136 @@ using NpgsqlTypes;
 
 namespace Wololo.PgKeyValueDB;
 
-public partial class PgKeyValueDB
+
+internal class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
 {
-    private class SqlExpressionVisitor : ExpressionVisitor
+    private readonly List<NpgsqlParameter> parameters = [];
+    private readonly StringBuilder whereClause = new();
+    private int parameterIndex;
+    private readonly Type documentType = documentType;
+
+    public string WhereClause => whereClause.ToString();
+    public NpgsqlParameter[] Parameters => parameters.ToArray();
+
+    protected override Expression VisitBinary(BinaryExpression node)
     {
-        private readonly List<NpgsqlParameter> parameters = new();
-        private readonly StringBuilder whereClause = new();
-        private int parameterIndex;
-        private readonly Type documentType;
+        whereClause.Append('(');
+        Visit(node.Left);
 
-        public SqlExpressionVisitor(Type documentType)
+        string op = node.NodeType switch
         {
-            this.documentType = documentType;
-        }
+            ExpressionType.Equal => " = ",
+            ExpressionType.NotEqual => " != ",
+            ExpressionType.GreaterThan => " > ",
+            ExpressionType.GreaterThanOrEqual => " >= ",
+            ExpressionType.LessThan => " < ",
+            ExpressionType.LessThanOrEqual => " <= ",
+            ExpressionType.AndAlso => " AND ",
+            ExpressionType.OrElse => " OR ",
+            _ => throw new NotSupportedException($"Operation {node.NodeType} is not supported")
+        };
 
-        public string WhereClause => whereClause.ToString();
-        public NpgsqlParameter[] Parameters => parameters.ToArray();
+        whereClause.Append(op);
+        Visit(node.Right);
+        whereClause.Append(')');
 
-        protected override Expression VisitBinary(BinaryExpression node)
+        return node;
+    }
+
+    protected override Expression VisitMethodCall(MethodCallExpression node)
+    {
+        if (node.Method.DeclaringType == typeof(string))
         {
-            whereClause.Append('(');
-            Visit(node.Left);
-
-            string op = node.NodeType switch
+            switch (node.Method.Name)
             {
-                ExpressionType.Equal => " = ",
-                ExpressionType.NotEqual => " != ",
-                ExpressionType.GreaterThan => " > ",
-                ExpressionType.GreaterThanOrEqual => " >= ",
-                ExpressionType.LessThan => " < ",
-                ExpressionType.LessThanOrEqual => " <= ",
-                ExpressionType.AndAlso => " AND ",
-                ExpressionType.OrElse => " OR ",
-                _ => throw new NotSupportedException($"Operation {node.NodeType} is not supported")
-            };
-
-            whereClause.Append(op);
-            Visit(node.Right);
-            whereClause.Append(')');
-
-            return node;
-        }
-
-        protected override Expression VisitMember(MemberExpression node)
-        {
-            if (node.Expression?.NodeType != ExpressionType.Parameter)
-                throw new NotSupportedException("Only direct property access is supported");
-            
-            var property = node.Member as PropertyInfo;
-            if (property == null)
-                throw new NotSupportedException("Only properties are supported");
-            
-            if (property.DeclaringType != documentType)
-                throw new NotSupportedException("Only properties from the document type are supported");
-                
-            var path = BuildJsonPath(property);
-            whereClause.Append(path);
-            return node;
-        }
-
-        private string BuildJsonPath(PropertyInfo property)
-        {
-            // For simple types, we can directly cast to text
-            if (IsSimpleType(property.PropertyType))
-            {
-                return $"cast(value ->> '{property.Name}' as {GetPostgresType(property.PropertyType)})";
+                case nameof(string.StartsWith):
+                    Visit(node.Object); // This will be the property
+                    whereClause.Append(" LIKE ");
+                    Visit(node.Arguments[0]); // This will be the prefix
+                    whereClause.Append(" || '%'");
+                    return node;
             }
-            
-            throw new NotSupportedException($"Complex property types are not supported: {property.PropertyType}");
         }
 
-        private static bool IsSimpleType(Type type)
+        throw new NotSupportedException($"Method {node.Method.Name} is not supported");
+    }
+
+    protected override Expression VisitMember(MemberExpression node)
+    {
+        if (node.Expression?.NodeType != ExpressionType.Parameter)
+            throw new NotSupportedException("Only direct property access is supported");
+
+        var property = node.Member as PropertyInfo;
+        if (property == null)
+            throw new NotSupportedException("Only properties are supported");
+
+        if (property.DeclaringType != documentType)
+            throw new NotSupportedException("Only properties from the document type are supported");
+
+        var path = BuildJsonPath(property);
+        whereClause.Append(path);
+        return node;
+    }
+
+    private static string BuildJsonPath(PropertyInfo property)
+    {
+        // For simple types, we can directly cast to text
+        if (IsSimpleType(property.PropertyType))
         {
-            return type.IsPrimitive 
-                || type == typeof(string) 
-                || type == typeof(decimal) 
-                || type == typeof(DateTime)
-                || type == typeof(DateTimeOffset)
-                || type == typeof(Guid)
-                || (Nullable.GetUnderlyingType(type)?.IsPrimitive ?? false);
+            return $"cast(value ->> '{property.Name}' as {GetPostgresType(property.PropertyType)})";
         }
 
-        private static string GetPostgresType(Type type)
-        {
-            return Type.GetTypeCode(Nullable.GetUnderlyingType(type) ?? type) switch
-            {
-                TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64 => "numeric",
-                TypeCode.Decimal or TypeCode.Double or TypeCode.Single => "numeric",
-                TypeCode.Boolean => "boolean",
-                TypeCode.String or TypeCode.Char => "text",
-                _ => "text" // Default to text for unknown types
-            };
-        }
+        throw new NotSupportedException($"Complex property types are not supported: {property.PropertyType}");
+    }
 
-        protected override Expression VisitConstant(ConstantExpression node)
-        {
-            parameterIndex++;
-            var parameter = new NpgsqlParameter
-            {
-                ParameterName = $"p{parameterIndex}",
-                Value = node.Value ?? DBNull.Value,
-                // Let Npgsql handle the type mapping
-                NpgsqlDbType = GetNpgsqlType(node.Type)
-            };
-            parameters.Add(parameter);
-            whereClause.Append($"@{parameter.ParameterName}");
-            return node;
-        }
+    private static bool IsSimpleType(Type type)
+    {
+        return type.IsPrimitive
+            || type == typeof(string)
+            || type == typeof(decimal)
+            || type == typeof(DateTime)
+            || type == typeof(DateTimeOffset)
+            || type == typeof(Guid)
+            || (Nullable.GetUnderlyingType(type)?.IsPrimitive ?? false);
+    }
 
-        private static NpgsqlDbType GetNpgsqlType(Type type)
+    private static string GetPostgresType(Type type)
+    {
+        return Type.GetTypeCode(Nullable.GetUnderlyingType(type) ?? type) switch
         {
-            return Type.GetTypeCode(Nullable.GetUnderlyingType(type) ?? type) switch
-            {
-                TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64 => NpgsqlDbType.Bigint,
-                TypeCode.Decimal => NpgsqlDbType.Numeric,
-                TypeCode.Double or TypeCode.Single => NpgsqlDbType.Double,
-                TypeCode.Boolean => NpgsqlDbType.Boolean,
-                TypeCode.String or TypeCode.Char => NpgsqlDbType.Text,
-                _ => NpgsqlDbType.Text // Default to text for unknown types
-            };
-        }
+            TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64 => "numeric",
+            TypeCode.Decimal or TypeCode.Double or TypeCode.Single => "numeric",
+            TypeCode.Boolean => "boolean",
+            TypeCode.String or TypeCode.Char => "text",
+            _ => "text" // Default to text for unknown types
+        };
+    }
+
+    protected override Expression VisitConstant(ConstantExpression node)
+    {
+        parameterIndex++;
+        var parameter = new NpgsqlParameter
+        {
+            ParameterName = $"p{parameterIndex}",
+            Value = node.Value ?? DBNull.Value,
+            // Let Npgsql handle the type mapping
+            NpgsqlDbType = GetNpgsqlType(node.Type)
+        };
+        parameters.Add(parameter);
+        whereClause.Append($"@{parameter.ParameterName}");
+        return node;
+    }
+
+    private static NpgsqlDbType GetNpgsqlType(Type type)
+    {
+        return Type.GetTypeCode(Nullable.GetUnderlyingType(type) ?? type) switch
+        {
+            TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64 => NpgsqlDbType.Bigint,
+            TypeCode.Decimal => NpgsqlDbType.Numeric,
+            TypeCode.Double or TypeCode.Single => NpgsqlDbType.Double,
+            TypeCode.Boolean => NpgsqlDbType.Boolean,
+            TypeCode.String or TypeCode.Char => NpgsqlDbType.Text,
+            _ => NpgsqlDbType.Text // Default to text for unknown types
+        };
     }
 }
