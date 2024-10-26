@@ -16,20 +16,6 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
     public string WhereClause => whereClause.ToString();
     public NpgsqlParameter[] Parameters => parameters.ToArray();
 
-    // Add this method to get the complete SQL for debugging
-    public string GetDebugSql()
-    {
-        var sql = new StringBuilder();
-        sql.AppendLine("Generated SQL:");
-        sql.AppendLine(WhereClause);
-        sql.AppendLine("\nParameters:");
-        foreach (var param in Parameters)
-        {
-            sql.AppendLine($"  @{param.ParameterName} = {param.Value} ({param.NpgsqlDbType}) [{param.Value?.GetType()}]");
-        }
-        return sql.ToString();
-    }
-
     protected override Expression VisitBinary(BinaryExpression node)
     {
         whereClause.Append('(');
@@ -140,7 +126,7 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
                     {
                         ParameterName = paramName,
                         Value = $"%{searchValue}%",
-                        NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text
+                        NpgsqlDbType = NpgsqlDbType.Text
                     });
                     whereClause.Append($"@{paramName}");
 

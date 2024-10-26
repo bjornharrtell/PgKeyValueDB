@@ -1,8 +1,6 @@
 using System.Linq.Expressions;
-using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using MysticMind.PostgresEmbed;
-using Npgsql;
 
 namespace Wololo.PgKeyValueDB.Tests;
 
@@ -72,36 +70,12 @@ public class PgKeyValueDBTest
         kv = serviceProvider.GetRequiredService<PgKeyValueDB>();
     }
 
-    private static void LogDebugInfo(string methodName, object data, string pid, string sql)
-    {
-        testContext.WriteLine($"\n=== {methodName} Debug Info ===");
-        testContext.WriteLine($"\nPID: {pid}");
-        testContext.WriteLine("\nStored Data:");
-        testContext.WriteLine(JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
-        testContext.WriteLine("\nGenerated SQL:");
-        testContext.WriteLine(sql);
-
-        // Query and log actual data in database
-        using var ds = NpgsqlDataSource.Create(connectionString);
-        using var conn = ds.OpenConnection();
-        using var cmd = new NpgsqlCommand($"SELECT value FROM pgkeyvaluetest.pgkeyvaluetest WHERE pid = @pid", conn);
-        cmd.Parameters.AddWithValue("pid", pid);
-        using var reader = cmd.ExecuteReader();
-
-        testContext.WriteLine("\nActual Data in Database:");
-        while (reader.Read())
-        {
-            testContext.WriteLine(reader.GetString(0));
-        }
-    }
-
     [ClassCleanup()]
     public static void ClassCleanup()
     {
         pg?.Stop();
         pg?.Dispose();
     }
-
 
     private static async Task SetupTestData()
     {
@@ -127,7 +101,7 @@ public class PgKeyValueDBTest
                     Country = "USA",
                     ZipCode = 02108
                 },
-                Tags = new List<string> { "vip", "early-adopter" },
+                Tags = ["vip", "early-adopter"],
                 IsVerified = true
             },
             new UserProfile
@@ -143,7 +117,7 @@ public class PgKeyValueDBTest
                     Country = "USA",
                     ZipCode = 94102
                 },
-                Tags = new List<string> { "beta-tester" },
+                Tags = ["beta-tester"],
                 IsVerified = false
             }
         };
@@ -306,20 +280,13 @@ public class PgKeyValueDBTest
         var key2 = nameof(CountFilterTest) + "2";
         var key3 = nameof(CountFilterTest) + "3";
         var pid = nameof(CountFilterTest);
-
         kv.Upsert(key1, new Poco { Value = key1 }, pid);
         kv.Upsert(key2, new Poco { Value = key2 }, pid);
         kv.Upsert(key3, new Poco { Value = key3 }, pid);
-
-        // Count all
         var totalCount = kv.Count<Poco>(pid);
         Assert.AreEqual(3, totalCount);
-
-        // Count with exact match
         var exactCount = kv.Count<Poco>(pid, p => p.Value == key1);
         Assert.AreEqual(1, exactCount);
-
-        // Count with prefix match
         var prefixCount = kv.Count<Poco>(pid, p => p.Value!.StartsWith(nameof(CountFilterTest)));
         Assert.AreEqual(3, prefixCount);
     }
@@ -331,12 +298,9 @@ public class PgKeyValueDBTest
         var key2 = nameof(CountFilterAsyncTest) + "2";
         var key3 = nameof(CountFilterAsyncTest) + "3";
         var pid = nameof(CountFilterAsyncTest);
-
         await kv.UpsertAsync(key1, new Poco { Value = key1 }, pid);
         await kv.UpsertAsync(key2, new Poco { Value = key2 }, pid);
         await kv.UpsertAsync(key3, new Poco { Value = key3 }, pid);
-
-        // Count with prefix match async
         var prefixCount = await kv.CountAsync<Poco>(pid, p => p.Value!.StartsWith(nameof(CountFilterAsyncTest)));
         Assert.AreEqual(3, prefixCount);
     }
@@ -348,24 +312,15 @@ public class PgKeyValueDBTest
         var key2 = nameof(RemoveAllFilterTest) + "2";
         var key3 = nameof(RemoveAllFilterTest) + "3";
         var pid = nameof(RemoveAllFilterTest);
-
         kv.Upsert(key1, new Poco { Value = key1 }, pid);
         kv.Upsert(key2, new Poco { Value = key2 }, pid);
         kv.Upsert(key3, new Poco { Value = key3 }, pid);
-
-        // Remove specific item
         var removedCount = kv.RemoveAll<Poco>(pid, p => p.Value == key1);
         Assert.AreEqual(1, removedCount);
-
-        // Verify remaining count
         var remainingCount = kv.Count<Poco>(pid);
         Assert.AreEqual(2, remainingCount);
-
-        // Remove remaining items with prefix
         var remainingRemoved = kv.RemoveAll<Poco>(pid, p => p.Value!.StartsWith(nameof(RemoveAllFilterTest)));
         Assert.AreEqual(2, remainingRemoved);
-
-        // Verify all gone
         var finalCount = kv.Count<Poco>(pid);
         Assert.AreEqual(0, finalCount);
     }
@@ -377,16 +332,11 @@ public class PgKeyValueDBTest
         var key2 = nameof(RemoveAllFilterAsyncTest) + "2";
         var key3 = nameof(RemoveAllFilterAsyncTest) + "3";
         var pid = nameof(RemoveAllFilterAsyncTest);
-
         await kv.UpsertAsync(key1, new Poco { Value = key1 }, pid);
         await kv.UpsertAsync(key2, new Poco { Value = key2 }, pid);
         await kv.UpsertAsync(key3, new Poco { Value = key3 }, pid);
-
-        // Remove with filter async
         var removedCount = await kv.RemoveAllAsync<Poco>(pid, p => p.Value!.StartsWith(nameof(RemoveAllFilterAsyncTest)));
         Assert.AreEqual(3, removedCount);
-
-        // Verify all gone
         var finalCount = await kv.CountAsync<Poco>(pid);
         Assert.AreEqual(0, finalCount);
     }
@@ -397,16 +347,11 @@ public class PgKeyValueDBTest
         var key1 = nameof(StringEqualsTest) + "1";
         var key2 = nameof(StringEqualsTest) + "2";
         var pid = nameof(StringEqualsTest);
-
         await kv.UpsertAsync(key1, new Poco { Value = key1 }, pid);
         await kv.UpsertAsync(key2, new Poco { Value = key2 }, pid);
-
-        // Test instance method
         var list1 = await kv.GetListAsync<Poco>(pid, p => p.Value!.Equals(key1)).ToListAsync();
         Assert.AreEqual(1, list1.Count);
         Assert.AreEqual(key1, list1[0].Value);
-
-        // Test static method
         var list2 = await kv.GetListAsync<Poco>(pid, p => string.Equals(p.Value, key2)).ToListAsync();
         Assert.AreEqual(1, list2.Count);
         Assert.AreEqual(key2, list2[0].Value);
@@ -417,28 +362,14 @@ public class PgKeyValueDBTest
     {
         var key = nameof(QueryByEnumValue);
         var pid = nameof(QueryByEnumValue);
-
         var testUser = new UserProfile
         {
             Name = "John Doe",
             Status = UserStatus.Active,
             Role = UserRole.Admin
         };
-
-        // Store the test data
         await kv.UpsertAsync(key, testUser, pid);
-
-        // Create visitor for debugging
-        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
-        Expression<Func<UserProfile, bool>> expr = u => u.Status == UserStatus.Active;
-        visitor.Visit(expr);
-
-        // Log debug info
-        LogDebugInfo(nameof(QueryByEnumValue), testUser, pid, visitor.GetDebugSql());
-
-        // Execute the query
         var activeUsers = await kv.GetListAsync<UserProfile>(pid, u => u.Status == UserStatus.Active).ToListAsync();
-
         Assert.AreEqual(1, activeUsers.Count);
         Assert.AreEqual("John Doe", activeUsers[0].Name);
     }
@@ -448,7 +379,6 @@ public class PgKeyValueDBTest
     {
         var key = nameof(QueryByNestedProperty);
         var pid = nameof(QueryByNestedProperty);
-
         var testUser = new UserProfile
         {
             Name = "John Doe",
@@ -458,21 +388,8 @@ public class PgKeyValueDBTest
                 Country = "USA"
             }
         };
-
-        // Store the test data
         await kv.UpsertAsync(key, testUser, pid);
-
-        // Create visitor for debugging
-        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
-        Expression<Func<UserProfile, bool>> expr = u => u.PrimaryAddress!.City == "New York";
-        visitor.Visit(expr);
-
-        // Log debug info
-        LogDebugInfo(nameof(QueryByNestedProperty), testUser, pid, visitor.GetDebugSql());
-
-        // Execute the query
         var nyUsers = await kv.GetListAsync<UserProfile>(pid, u => u.PrimaryAddress!.City == "New York").ToListAsync();
-
         Assert.AreEqual(1, nyUsers.Count);
         Assert.AreEqual("John Doe", nyUsers[0].Name);
     }
@@ -483,24 +400,12 @@ public class PgKeyValueDBTest
         const int AGE_THRESHOLD = 28;
         var key = nameof(QueryWithConstant);
         var pid = nameof(QueryWithConstant);
-
         var testUser = new UserProfile
         {
             Name = "John Doe",
             Age = 30
         };
-
-        // Store the test data
         await kv.UpsertAsync(key, testUser, pid);
-
-        // Create visitor for debugging
-        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
-        Expression<Func<UserProfile, bool>> expr = u => u.Age > AGE_THRESHOLD;
-        visitor.Visit(expr);
-
-        // Log debug info
-        LogDebugInfo(nameof(QueryWithConstant), testUser, pid, visitor.GetDebugSql());
-
         var olderUsers = await kv.GetListAsync<UserProfile>(pid, u => u.Age > AGE_THRESHOLD).ToListAsync();
         Assert.AreEqual(1, olderUsers.Count);
     }
@@ -510,7 +415,6 @@ public class PgKeyValueDBTest
     {
         var key = nameof(ComplexQueryTest);
         var pid = nameof(ComplexQueryTest);
-
         var testUser = new UserProfile
         {
             Name = "John Doe",
@@ -519,20 +423,13 @@ public class PgKeyValueDBTest
             PrimaryAddress = new Address { Country = "USA" },
             SecondaryAddress = new Address { City = "Boston" }
         };
-
         await kv.UpsertAsync(key, testUser, pid);
-
-        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
         Expression<Func<UserProfile, bool>> expr = u =>
             u.IsVerified == true &&
             u.Role == UserRole.Admin &&
             u.PrimaryAddress!.Country == "USA" &&
             u.SecondaryAddress!.City == "Boston";
-        visitor.Visit(expr);
-
-        LogDebugInfo(nameof(ComplexQueryTest), testUser, pid, visitor.GetDebugSql());
-
-        var verifiedAdmins = await kv.GetListAsync<UserProfile>(pid, expr).ToListAsync();
+        var verifiedAdmins = await kv.GetListAsync(pid, expr).ToListAsync();
         Assert.AreEqual(1, verifiedAdmins.Count);
     }
 
@@ -541,7 +438,6 @@ public class PgKeyValueDBTest
     {
         var key = nameof(MultipleNestedConditionsTest);
         var pid = nameof(MultipleNestedConditionsTest);
-
         var testUser = new UserProfile
         {
             Name = "John Doe",
@@ -555,19 +451,12 @@ public class PgKeyValueDBTest
                 City = "Boston"
             }
         };
-
         await kv.UpsertAsync(key, testUser, pid);
-
-        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
         Expression<Func<UserProfile, bool>> expr = u =>
             u.PrimaryAddress!.ZipCode < 20000 &&
             u.PrimaryAddress.City != "San Francisco" &&
             (u.SecondaryAddress == null || u.SecondaryAddress.City == "Boston");
-        visitor.Visit(expr);
-
-        LogDebugInfo(nameof(MultipleNestedConditionsTest), testUser, pid, visitor.GetDebugSql());
-
-        var users = await kv.GetListAsync<UserProfile>(pid, expr).ToListAsync();
+        var users = await kv.GetListAsync(pid, expr).ToListAsync();
         Assert.AreEqual(1, users.Count);
     }
 
@@ -583,18 +472,11 @@ public class PgKeyValueDBTest
             Status = UserStatus.Active,
             Role = UserRole.Admin
         };
-
         await kv.UpsertAsync(key, testUser, pid);
-
-        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
         Expression<Func<UserProfile, bool>> expr = u =>
             u.Status.ToString() == "Active" &&
             u.Role.ToString() == "Admin";
-        visitor.Visit(expr);
-
-        LogDebugInfo(nameof(EnumComparisonWithStringTest), testUser, pid, visitor.GetDebugSql());
-
-        var activeAdmins = await kv.GetListAsync<UserProfile>(pid, expr).ToListAsync();
+        var activeAdmins = await kv.GetListAsync(pid, expr).ToListAsync();
         Assert.AreEqual(1, activeAdmins.Count);
     }
 
@@ -603,10 +485,8 @@ public class PgKeyValueDBTest
     {
         const string COUNTRY = "USA";
         const int ZIP_THRESHOLD = 90000;
-
         var key = nameof(NestedPropertyWithConstantComparisonTest);
         var pid = nameof(NestedPropertyWithConstantComparisonTest);
-
         var testUser = new UserProfile
         {
             Name = "Jane Smith",
@@ -616,18 +496,11 @@ public class PgKeyValueDBTest
                 ZipCode = 94102
             }
         };
-
         await kv.UpsertAsync(key, testUser, pid);
-
-        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
         Expression<Func<UserProfile, bool>> expr = u =>
             u.PrimaryAddress!.Country == COUNTRY &&
             u.PrimaryAddress.ZipCode > ZIP_THRESHOLD;
-        visitor.Visit(expr);
-
-        LogDebugInfo(nameof(NestedPropertyWithConstantComparisonTest), testUser, pid, visitor.GetDebugSql());
-
-        var westCoastUsers = await kv.GetListAsync<UserProfile>(pid, expr).ToListAsync();
+        var westCoastUsers = await kv.GetListAsync(pid, expr).ToListAsync();
         Assert.AreEqual(1, westCoastUsers.Count);
     }
 
@@ -636,7 +509,6 @@ public class PgKeyValueDBTest
     {
         var key = nameof(FilterWithStringParameterTest);
         var pid = nameof(FilterWithStringParameterTest);
-
         var testData = new[]
         {
             new UserProfile
@@ -652,29 +524,16 @@ public class PgKeyValueDBTest
                 Status = UserStatus.Active
             }
         };
-
-        // Store test data
         foreach (var user in testData)
         {
             await kv.UpsertAsync($"{key}_{user.Name}", user, pid);
         }
-
         string filterText = "john";  // Note: lowercase to test case insensitivity
-
-        // Create visitor for debugging
-        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
         Expression<Func<UserProfile, bool>> expr = p =>
             p.Status == UserStatus.Active &&
             (p.Name!.Contains(filterText, StringComparison.OrdinalIgnoreCase) ||
              p.DisplayName!.Contains(filterText, StringComparison.OrdinalIgnoreCase));
-        visitor.Visit(expr);
-
-        // Log debug info
-        LogDebugInfo(nameof(FilterWithStringParameterTest), testData, pid, visitor.GetDebugSql());
-
-        // Execute the query
         var results = await kv.GetListAsync(pid, expr).ToListAsync();
-
         Assert.AreEqual(2, results.Count); // Should match both John Smith and Johnny
         Assert.IsTrue(results.Any(u => u.Name == "John Smith"));
         Assert.IsTrue(results.Any(u => u.DisplayName == "Johnny"));
