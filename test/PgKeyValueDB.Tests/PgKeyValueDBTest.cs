@@ -3,11 +3,51 @@ using MysticMind.PostgresEmbed;
 
 namespace Wololo.PgKeyValueDB.Tests;
 
+public enum UserStatus
+{
+    Active,
+    Inactive,
+    Pending
+}
+
+public enum UserRole
+{
+    Admin,
+    User,
+    Guest
+}
+
+public class Address
+{
+    public string? Street { get; set; }
+    public string? City { get; set; }
+    public string? Country { get; set; }
+    public int ZipCode { get; set; }
+}
+
+public class UserProfile
+{
+    public string? Name { get; set; }
+    public int Age { get; set; }
+    public UserStatus Status { get; set; }
+    public UserRole Role { get; set; }
+    public Address? PrimaryAddress { get; set; }
+    public Address? SecondaryAddress { get; set; }
+    public List<string>? Tags { get; set; }
+    public bool IsVerified { get; set; }
+}
+
+public class Poco
+{
+    public string? Value { get; set; }
+}
+
 [TestClass]
 public class PgKeyValueDBTest
 {
     private static PgServer pg = null!;
     private static PgKeyValueDB kv = null!;
+    private const string TestPid = "AdvancedTest";
 
     [ClassInitialize]
     public static void ClassInit(TestContext context)
@@ -31,9 +71,56 @@ public class PgKeyValueDBTest
         pg?.Dispose();
     }
 
-    public class Poco
+
+    private static async Task SetupTestData()
     {
-        public string? Value { get; set; }
+        var users = new[]
+        {
+            new UserProfile
+            {
+                Name = "John Doe",
+                Age = 30,
+                Status = UserStatus.Active,
+                Role = UserRole.Admin,
+                PrimaryAddress = new Address
+                {
+                    Street = "123 Main St",
+                    City = "New York",
+                    Country = "USA",
+                    ZipCode = 10001
+                },
+                SecondaryAddress = new Address
+                {
+                    Street = "456 Park Ave",
+                    City = "Boston",
+                    Country = "USA",
+                    ZipCode = 02108
+                },
+                Tags = new List<string> { "vip", "early-adopter" },
+                IsVerified = true
+            },
+            new UserProfile
+            {
+                Name = "Jane Smith",
+                Age = 25,
+                Status = UserStatus.Pending,
+                Role = UserRole.User,
+                PrimaryAddress = new Address
+                {
+                    Street = "789 Oak Rd",
+                    City = "San Francisco",
+                    Country = "USA",
+                    ZipCode = 94102
+                },
+                Tags = new List<string> { "beta-tester" },
+                IsVerified = false
+            }
+        };
+
+        for (int i = 0; i < users.Length; i++)
+        {
+            await kv.UpsertAsync($"user_{i}", users[i], TestPid);
+        }
     }
 
     [TestMethod]
@@ -280,5 +367,126 @@ public class PgKeyValueDBTest
         var list2 = await kv.GetListAsync<Poco>(pid, p => string.Equals(p.Value, key2)).ToListAsync();
         Assert.AreEqual(1, list2.Count);
         Assert.AreEqual(key2, list2[0].Value);
+    }
+
+    [TestMethod]
+    public async Task QueryByEnumValue()
+    {
+        var activeUsers = await kv.GetListAsync<UserProfile>(TestPid,
+            u => u.Status == UserStatus.Active).ToListAsync();
+        Assert.AreEqual(1, activeUsers.Count);
+        Assert.AreEqual("John Doe", activeUsers[0].Name);
+
+        var pendingUsers = await kv.GetListAsync<UserProfile>(TestPid,
+            u => u.Status == UserStatus.Pending && u.Role == UserRole.User).ToListAsync();
+        Assert.AreEqual(1, pendingUsers.Count);
+        Assert.AreEqual("Jane Smith", pendingUsers[0].Name);
+    }
+
+    [TestMethod]
+    public async Task QueryByNestedProperty()
+    {
+        var nyUsers = await kv.GetListAsync<UserProfile>(TestPid,
+            u => u.PrimaryAddress!.City == "New York").ToListAsync();
+        Assert.AreEqual(1, nyUsers.Count);
+        Assert.AreEqual("John Doe", nyUsers[0].Name);
+
+        var sfUsers = await kv.GetListAsync<UserProfile>(TestPid,
+            u => u.PrimaryAddress!.City == "San Francisco" && u.Age < 30).ToListAsync();
+        Assert.AreEqual(1, sfUsers.Count);
+        Assert.AreEqual("Jane Smith", sfUsers[0].Name);
+    }
+
+    [TestMethod]
+    public async Task QueryWithConstant()
+    {
+        const int AGE_THRESHOLD = 28;
+        var olderUsers = await kv.GetListAsync<UserProfile>(TestPid,
+            u => u.Age > AGE_THRESHOLD).ToListAsync();
+        Assert.AreEqual(1, olderUsers.Count);
+        Assert.AreEqual("John Doe", olderUsers[0].Name);
+    }
+
+    [TestMethod]
+    public async Task ComplexQueryTest()
+    {
+        var verifiedAdmins = await kv.GetListAsync<UserProfile>(TestPid,
+            u => u.IsVerified &&
+                 u.Role == UserRole.Admin &&
+                 u.PrimaryAddress!.Country == "USA" &&
+                 u.SecondaryAddress!.City == "Boston").ToListAsync();
+
+        Assert.AreEqual(1, verifiedAdmins.Count);
+        Assert.AreEqual("John Doe", verifiedAdmins[0].Name);
+    }
+
+    [TestMethod]
+    public async Task MultipleNestedConditionsTest()
+    {
+        var users = await kv.GetListAsync<UserProfile>(TestPid,
+            u => u.PrimaryAddress!.ZipCode < 20000 &&
+                 u.PrimaryAddress.City != "San Francisco" &&
+                 (u.SecondaryAddress == null || u.SecondaryAddress.City == "Boston")).ToListAsync();
+
+        Assert.AreEqual(1, users.Count);
+        Assert.AreEqual("John Doe", users[0].Name);
+    }
+
+    [TestMethod]
+    public async Task EnumComparisonWithStringTest()
+    {
+        var activeUsers = await kv.GetListAsync<UserProfile>(TestPid,
+            u => u.Status.ToString() == "Active" && u.Role.ToString() == "Admin").ToListAsync();
+
+        Assert.AreEqual(1, activeUsers.Count);
+        Assert.AreEqual("John Doe", activeUsers[0].Name);
+    }
+
+    [TestMethod]
+    public async Task NestedPropertyWithConstantComparisonTest()
+    {
+        const string COUNTRY = "USA";
+        const int ZIP_THRESHOLD = 90000;
+
+        var westCoastUsers = await kv.GetListAsync<UserProfile>(TestPid,
+            u => u.PrimaryAddress!.Country == COUNTRY &&
+                 u.PrimaryAddress.ZipCode > ZIP_THRESHOLD).ToListAsync();
+
+        Assert.AreEqual(1, westCoastUsers.Count);
+        Assert.AreEqual("Jane Smith", westCoastUsers[0].Name);
+    }
+
+    [TestMethod]
+    public async Task RemoveWithComplexFilterTest()
+    {
+        // First, add a test user
+        await kv.UpsertAsync("test_user", new UserProfile
+        {
+            Name = "Test User",
+            Age = 35,
+            Status = UserStatus.Inactive,
+            Role = UserRole.Guest,
+            PrimaryAddress = new Address
+            {
+                Street = "Test St",
+                City = "Test City",
+                Country = "Test Country",
+                ZipCode = 99999
+            },
+            IsVerified = false
+        }, TestPid);
+
+        // Remove using complex filter
+        var removedCount = await kv.RemoveAllAsync<UserProfile>(TestPid,
+            u => u.Status == UserStatus.Inactive &&
+                 u.Role == UserRole.Guest &&
+                 u.PrimaryAddress!.ZipCode == 99999);
+
+        Assert.AreEqual(1, removedCount);
+
+        // Verify removal
+        var remainingInactiveUsers = await kv.GetListAsync<UserProfile>(TestPid,
+            u => u.Status == UserStatus.Inactive).ToListAsync();
+        Assert.AreEqual(0, remainingInactiveUsers.Count);
     }
 }
