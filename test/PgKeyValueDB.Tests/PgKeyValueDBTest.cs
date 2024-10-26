@@ -206,7 +206,7 @@ public class PgKeyValueDBTest
     }
 
     [TestMethod]
-    public async void GetListTest()
+    public async Task GetListTest()
     {
         var key1 = nameof(GetListTest) + "1";
         var key2 = nameof(GetListTest) + "2";
@@ -218,7 +218,7 @@ public class PgKeyValueDBTest
     }
 
     [TestMethod]
-    public async void GetListOffsetTest()
+    public async Task GetListOffsetTest()
     {
         var key1 = nameof(GetListOffsetTest) + "1";
         var key2 = nameof(GetListOffsetTest) + "2";
@@ -238,7 +238,7 @@ public class PgKeyValueDBTest
     }
 
     [TestMethod]
-    public async void GetListFilterTest()
+    public async Task GetListFilterTest()
     {
         var key1 = nameof(GetListFilterTest) + "1";
         var key2 = nameof(GetListFilterTest) + "2";
@@ -250,7 +250,7 @@ public class PgKeyValueDBTest
     }
 
     [TestMethod]
-    public async void GetListFilterStartsWithTest()
+    public async Task GetListFilterStartsWithTest()
     {
         var key1 = nameof(GetListFilterStartsWithTest) + "1";
         var key2 = nameof(GetListFilterStartsWithTest) + "2";
@@ -262,7 +262,7 @@ public class PgKeyValueDBTest
     }
 
     [TestMethod]
-    public async void GetListFilterContainsTest()
+    public async Task GetListFilterContainsTest()
     {
         var key1 = nameof(GetListFilterContainsTest) + "1";
         var key2 = nameof(GetListFilterContainsTest) + "2";
