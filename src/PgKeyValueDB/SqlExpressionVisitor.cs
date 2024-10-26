@@ -33,9 +33,9 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
     protected override Expression VisitBinary(BinaryExpression node)
     {
         whereClause.Append('(');
-        
+
         // Special case for direct boolean comparisons with constants
-        if (node.NodeType == ExpressionType.Equal && 
+        if (node.NodeType == ExpressionType.Equal &&
             (node.Left.Type == typeof(bool) || node.Right.Type == typeof(bool)))
         {
             if (node.Left.NodeType == ExpressionType.MemberAccess)
@@ -58,7 +58,7 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
             whereClause.Append(GetOperator(node.NodeType));
             Visit(node.Right);
         }
-        
+
         whereClause.Append(')');
         return node;
     }
@@ -117,19 +117,33 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
         {
             switch (node.Method.Name)
             {
-                case nameof(object.Equals) or nameof(string.Equals):
-                    if (node.Object != null)
+                case nameof(string.Contains):
+                    bool isCaseInsensitive = false;
+
+                    // Check for case insensitive comparison
+                    if (node.Arguments.Count == 2 && node.Arguments[1].Type == typeof(StringComparison))
                     {
-                        Visit(node.Object);
-                        whereClause.Append(" = ");
-                        Visit(node.Arguments[0]);
+                        var comparisonValue = Expression.Lambda(node.Arguments[1]).Compile().DynamicInvoke();
+                        isCaseInsensitive = comparisonValue is StringComparison comparison &&
+                            (comparison == StringComparison.OrdinalIgnoreCase ||
+                             comparison == StringComparison.CurrentCultureIgnoreCase);
                     }
-                    else
+
+                    Visit(node.Object);
+                    whereClause.Append(isCaseInsensitive ? " ILIKE " : " LIKE ");
+
+                    // Get the search value and create pattern parameter
+                    var searchValue = Expression.Lambda(node.Arguments[0]).Compile().DynamicInvoke()?.ToString();
+                    parameterIndex++;
+                    var paramName = $"p{parameterIndex}";
+                    parameters.Add(new NpgsqlParameter
                     {
-                        Visit(node.Arguments[0]);
-                        whereClause.Append(" = ");
-                        Visit(node.Arguments[1]);
-                    }
+                        ParameterName = paramName,
+                        Value = $"%{searchValue}%",
+                        NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text
+                    });
+                    whereClause.Append($"@{paramName}");
+
                     return node;
 
                 case nameof(string.StartsWith):
@@ -145,11 +159,19 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
                     Visit(node.Arguments[0]);
                     return node;
 
-                case nameof(string.Contains):
-                    Visit(node.Object);
-                    whereClause.Append(" LIKE '%' || ");
-                    Visit(node.Arguments[0]);
-                    whereClause.Append(" || '%'");
+                case nameof(object.Equals) or nameof(string.Equals):
+                    if (node.Object != null)
+                    {
+                        Visit(node.Object);
+                        whereClause.Append(" = ");
+                        Visit(node.Arguments[0]);
+                    }
+                    else
+                    {
+                        Visit(node.Arguments[0]);
+                        whereClause.Append(" = ");
+                        Visit(node.Arguments[1]);
+                    }
                     return node;
 
                 case nameof(string.ToLower):
@@ -212,6 +234,7 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
 
     protected override Expression VisitMember(MemberExpression node)
     {
+        // Handle closure/captured variables
         if (node.Expression?.NodeType == ExpressionType.Constant)
         {
             var value = Expression.Lambda(node).Compile().DynamicInvoke();
@@ -219,13 +242,23 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
             return node;
         }
 
+        // Handle nested properties in the JSON document
         if (node.Expression is MemberExpression parentMember)
         {
+            // Check if this is accessing a closure field
+            if (parentMember.Expression?.NodeType == ExpressionType.Constant)
+            {
+                var value = Expression.Lambda(node).Compile().DynamicInvoke();
+                AddParameter(value, node.Type);
+                return node;
+            }
+
             var parentPath = BuildNestedJsonPath(parentMember);
             whereClause.Append(BuildJsonPath(node.Member, parentPath));
             return node;
         }
 
+        // Handle root-level properties in the JSON document
         if (node.Expression?.NodeType == ExpressionType.Parameter)
         {
             whereClause.Append(BuildJsonPath(node.Member));

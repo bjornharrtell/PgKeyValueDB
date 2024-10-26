@@ -31,6 +31,7 @@ public class Address
 public class UserProfile
 {
     public string? Name { get; set; }
+    public string? DisplayName { get; set; }
     public int Age { get; set; }
     public UserStatus Status { get; set; }
     public UserRole Role { get; set; }
@@ -628,5 +629,54 @@ public class PgKeyValueDBTest
 
         var westCoastUsers = await kv.GetListAsync<UserProfile>(pid, expr).ToListAsync();
         Assert.AreEqual(1, westCoastUsers.Count);
+    }
+
+    [TestMethod]
+    public async Task FilterWithStringParameterTest()
+    {
+        var key = nameof(FilterWithStringParameterTest);
+        var pid = nameof(FilterWithStringParameterTest);
+
+        var testData = new[]
+        {
+            new UserProfile
+            {
+                Name = "John Smith",
+                DisplayName = "Johnny",
+                Status = UserStatus.Active
+            },
+            new UserProfile
+            {
+                Name = "Jane Johnny",
+                DisplayName = "Jane",
+                Status = UserStatus.Active
+            }
+        };
+
+        // Store test data
+        foreach (var user in testData)
+        {
+            await kv.UpsertAsync($"{key}_{user.Name}", user, pid);
+        }
+
+        string filterText = "john";  // Note: lowercase to test case insensitivity
+
+        // Create visitor for debugging
+        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
+        Expression<Func<UserProfile, bool>> expr = p =>
+            p.Status == UserStatus.Active &&
+            (p.Name!.Contains(filterText, StringComparison.OrdinalIgnoreCase) ||
+             p.DisplayName!.Contains(filterText, StringComparison.OrdinalIgnoreCase));
+        visitor.Visit(expr);
+
+        // Log debug info
+        LogDebugInfo(nameof(FilterWithStringParameterTest), testData, pid, visitor.GetDebugSql());
+
+        // Execute the query
+        var results = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        Assert.AreEqual(2, results.Count); // Should match both John Smith and Johnny
+        Assert.IsTrue(results.Any(u => u.Name == "John Smith"));
+        Assert.IsTrue(results.Any(u => u.DisplayName == "Johnny"));
     }
 }
