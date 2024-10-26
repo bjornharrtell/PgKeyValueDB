@@ -48,6 +48,24 @@ internal class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
         {
             switch (node.Method.Name)
             {
+                case nameof(object.Equals) or nameof(string.Equals):
+                    // Handle both instance and static method calls
+                    if (node.Object != null)
+                    {
+                        // Instance method: str.Equals(other)
+                        Visit(node.Object);
+                        whereClause.Append(" = ");
+                        Visit(node.Arguments[0]);
+                    }
+                    else
+                    {
+                        // Static method: string.Equals(str1, str2)
+                        Visit(node.Arguments[0]);
+                        whereClause.Append(" = ");
+                        Visit(node.Arguments[1]);
+                    }
+                    return node;
+
                 case nameof(string.StartsWith):
                     Visit(node.Object);
                     whereClause.Append(" LIKE ");
@@ -145,11 +163,30 @@ internal class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
             if (property == null)
                 throw new NotSupportedException("Only properties are supported");
 
-            if (property.DeclaringType != documentType)
-                throw new NotSupportedException("Only properties from the document type are supported");
+            // Allow both document type properties and string properties (for string methods)
+            var isDocumentProperty = property.DeclaringType == documentType;
+            var isStringProperty = property.PropertyType == typeof(string);
+
+            if (!isDocumentProperty && !isStringProperty)
+                throw new NotSupportedException($"Property '{property.Name}' must be either from the document type or a string type");
 
             var path = BuildJsonPath(property);
             whereClause.Append(path);
+            return node;
+        }
+
+        // Handle property access in method chains (e.g., p.Value.Length)
+        if (node.Expression is MemberExpression)
+        {
+            var property = node.Member as PropertyInfo;
+            if (property == null)
+                throw new NotSupportedException("Only properties are supported");
+
+            // For method chains, allow string properties
+            if (property.DeclaringType != typeof(string))
+                throw new NotSupportedException("Only string properties are supported in method chains");
+
+            whereClause.Append(node.Member.Name.ToLower());
             return node;
         }
 

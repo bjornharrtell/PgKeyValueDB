@@ -260,4 +260,25 @@ public class PgKeyValueDBTest
         var finalCount = await kv.CountAsync<Poco>(pid);
         Assert.AreEqual(0, finalCount);
     }
+
+    [TestMethod]
+    public async Task StringEqualsTest()
+    {
+        var key1 = nameof(StringEqualsTest) + "1";
+        var key2 = nameof(StringEqualsTest) + "2";
+        var pid = nameof(StringEqualsTest);
+
+        await kv.UpsertAsync(key1, new Poco { Value = key1 }, pid);
+        await kv.UpsertAsync(key2, new Poco { Value = key2 }, pid);
+
+        // Test instance method
+        var list1 = await kv.GetListAsync<Poco>(pid, p => p.Value!.Equals(key1)).ToListAsync();
+        Assert.AreEqual(1, list1.Count);
+        Assert.AreEqual(key1, list1[0].Value);
+
+        // Test static method
+        var list2 = await kv.GetListAsync<Poco>(pid, p => string.Equals(p.Value, key2)).ToListAsync();
+        Assert.AreEqual(1, list2.Count);
+        Assert.AreEqual(key2, list2[0].Value);
+    }
 }
