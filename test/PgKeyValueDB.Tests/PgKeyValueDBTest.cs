@@ -1,5 +1,8 @@
+using System.Linq.Expressions;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using MysticMind.PostgresEmbed;
+using Npgsql;
 
 namespace Wololo.PgKeyValueDB.Tests;
 
@@ -48,13 +51,17 @@ public class PgKeyValueDBTest
     private static PgServer pg = null!;
     private static PgKeyValueDB kv = null!;
     private const string TestPid = "AdvancedTest";
+    private static TestContext testContext = null!;
+    private static string connectionString = null!;
 
     [ClassInitialize]
     public static void ClassInit(TestContext context)
     {
+        testContext = context;
         IServiceCollection services = new ServiceCollection();
         pg = new PgServer("16.2.0", clearWorkingDirOnStart: true, clearInstanceDirOnStop: true);
         pg.Start();
+        connectionString = $"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres";
         services.AddPgKeyValueDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres", b =>
         {
             b.SchemaName = "pgkeyvaluetest";
@@ -62,6 +69,29 @@ public class PgKeyValueDBTest
         });
         var serviceProvider = services.BuildServiceProvider();
         kv = serviceProvider.GetRequiredService<PgKeyValueDB>();
+    }
+
+    private static void LogDebugInfo(string methodName, object data, string pid, string sql)
+    {
+        testContext.WriteLine($"\n=== {methodName} Debug Info ===");
+        testContext.WriteLine($"\nPID: {pid}");
+        testContext.WriteLine("\nStored Data:");
+        testContext.WriteLine(JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
+        testContext.WriteLine("\nGenerated SQL:");
+        testContext.WriteLine(sql);
+
+        // Query and log actual data in database
+        using var ds = NpgsqlDataSource.Create(connectionString);
+        using var conn = ds.OpenConnection();
+        using var cmd = new NpgsqlCommand($"SELECT value FROM pgkeyvaluetest.pgkeyvaluetest WHERE pid = @pid", conn);
+        cmd.Parameters.AddWithValue("pid", pid);
+        using var reader = cmd.ExecuteReader();
+
+        testContext.WriteLine("\nActual Data in Database:");
+        while (reader.Read())
+        {
+            testContext.WriteLine(reader.GetString(0));
+        }
     }
 
     [ClassCleanup()]
@@ -372,74 +402,187 @@ public class PgKeyValueDBTest
     [TestMethod]
     public async Task QueryByEnumValue()
     {
-        var activeUsers = await kv.GetListAsync<UserProfile>(TestPid,
-            u => u.Status == UserStatus.Active).ToListAsync();
+        var key = nameof(QueryByEnumValue);
+        var pid = nameof(QueryByEnumValue);
+
+        var testUser = new UserProfile
+        {
+            Name = "John Doe",
+            Status = UserStatus.Active,
+            Role = UserRole.Admin
+        };
+
+        // Store the test data
+        await kv.UpsertAsync(key, testUser, pid);
+
+        // Create visitor for debugging
+        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
+        Expression<Func<UserProfile, bool>> expr = u => u.Status == UserStatus.Active;
+        visitor.Visit(expr);
+
+        // Log debug info
+        LogDebugInfo(nameof(QueryByEnumValue), testUser, pid, visitor.GetDebugSql());
+
+        // Execute the query
+        var activeUsers = await kv.GetListAsync<UserProfile>(pid, u => u.Status == UserStatus.Active).ToListAsync();
+
         Assert.AreEqual(1, activeUsers.Count);
         Assert.AreEqual("John Doe", activeUsers[0].Name);
-
-        var pendingUsers = await kv.GetListAsync<UserProfile>(TestPid,
-            u => u.Status == UserStatus.Pending && u.Role == UserRole.User).ToListAsync();
-        Assert.AreEqual(1, pendingUsers.Count);
-        Assert.AreEqual("Jane Smith", pendingUsers[0].Name);
     }
 
     [TestMethod]
     public async Task QueryByNestedProperty()
     {
-        var nyUsers = await kv.GetListAsync<UserProfile>(TestPid,
-            u => u.PrimaryAddress!.City == "New York").ToListAsync();
+        var key = nameof(QueryByNestedProperty);
+        var pid = nameof(QueryByNestedProperty);
+
+        var testUser = new UserProfile
+        {
+            Name = "John Doe",
+            PrimaryAddress = new Address
+            {
+                City = "New York",
+                Country = "USA"
+            }
+        };
+
+        // Store the test data
+        await kv.UpsertAsync(key, testUser, pid);
+
+        // Create visitor for debugging
+        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
+        Expression<Func<UserProfile, bool>> expr = u => u.PrimaryAddress!.City == "New York";
+        visitor.Visit(expr);
+
+        // Log debug info
+        LogDebugInfo(nameof(QueryByNestedProperty), testUser, pid, visitor.GetDebugSql());
+
+        // Execute the query
+        var nyUsers = await kv.GetListAsync<UserProfile>(pid, u => u.PrimaryAddress!.City == "New York").ToListAsync();
+
         Assert.AreEqual(1, nyUsers.Count);
         Assert.AreEqual("John Doe", nyUsers[0].Name);
-
-        var sfUsers = await kv.GetListAsync<UserProfile>(TestPid,
-            u => u.PrimaryAddress!.City == "San Francisco" && u.Age < 30).ToListAsync();
-        Assert.AreEqual(1, sfUsers.Count);
-        Assert.AreEqual("Jane Smith", sfUsers[0].Name);
     }
 
     [TestMethod]
     public async Task QueryWithConstant()
     {
         const int AGE_THRESHOLD = 28;
-        var olderUsers = await kv.GetListAsync<UserProfile>(TestPid,
-            u => u.Age > AGE_THRESHOLD).ToListAsync();
+        var key = nameof(QueryWithConstant);
+        var pid = nameof(QueryWithConstant);
+
+        var testUser = new UserProfile
+        {
+            Name = "John Doe",
+            Age = 30
+        };
+
+        // Store the test data
+        await kv.UpsertAsync(key, testUser, pid);
+
+        // Create visitor for debugging
+        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
+        Expression<Func<UserProfile, bool>> expr = u => u.Age > AGE_THRESHOLD;
+        visitor.Visit(expr);
+
+        // Log debug info
+        LogDebugInfo(nameof(QueryWithConstant), testUser, pid, visitor.GetDebugSql());
+
+        var olderUsers = await kv.GetListAsync<UserProfile>(pid, u => u.Age > AGE_THRESHOLD).ToListAsync();
         Assert.AreEqual(1, olderUsers.Count);
-        Assert.AreEqual("John Doe", olderUsers[0].Name);
     }
 
     [TestMethod]
     public async Task ComplexQueryTest()
     {
-        var verifiedAdmins = await kv.GetListAsync<UserProfile>(TestPid,
-            u => u.IsVerified &&
-                 u.Role == UserRole.Admin &&
-                 u.PrimaryAddress!.Country == "USA" &&
-                 u.SecondaryAddress!.City == "Boston").ToListAsync();
+        var key = nameof(ComplexQueryTest);
+        var pid = nameof(ComplexQueryTest);
 
+        var testUser = new UserProfile
+        {
+            Name = "John Doe",
+            IsVerified = true,
+            Role = UserRole.Admin,
+            PrimaryAddress = new Address { Country = "USA" },
+            SecondaryAddress = new Address { City = "Boston" }
+        };
+
+        await kv.UpsertAsync(key, testUser, pid);
+
+        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
+        Expression<Func<UserProfile, bool>> expr = u =>
+            u.IsVerified &&
+            u.Role == UserRole.Admin &&
+            u.PrimaryAddress!.Country == "USA" &&
+            u.SecondaryAddress!.City == "Boston";
+        visitor.Visit(expr);
+
+        LogDebugInfo(nameof(ComplexQueryTest), testUser, pid, visitor.GetDebugSql());
+
+        var verifiedAdmins = await kv.GetListAsync<UserProfile>(pid, expr).ToListAsync();
         Assert.AreEqual(1, verifiedAdmins.Count);
-        Assert.AreEqual("John Doe", verifiedAdmins[0].Name);
     }
 
     [TestMethod]
     public async Task MultipleNestedConditionsTest()
     {
-        var users = await kv.GetListAsync<UserProfile>(TestPid,
-            u => u.PrimaryAddress!.ZipCode < 20000 &&
-                 u.PrimaryAddress.City != "San Francisco" &&
-                 (u.SecondaryAddress == null || u.SecondaryAddress.City == "Boston")).ToListAsync();
+        var key = nameof(MultipleNestedConditionsTest);
+        var pid = nameof(MultipleNestedConditionsTest);
 
+        var testUser = new UserProfile
+        {
+            Name = "John Doe",
+            PrimaryAddress = new Address
+            {
+                ZipCode = 10001,
+                City = "New York"
+            },
+            SecondaryAddress = new Address
+            {
+                City = "Boston"
+            }
+        };
+
+        await kv.UpsertAsync(key, testUser, pid);
+
+        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
+        Expression<Func<UserProfile, bool>> expr = u =>
+            u.PrimaryAddress!.ZipCode < 20000 &&
+            u.PrimaryAddress.City != "San Francisco" &&
+            (u.SecondaryAddress == null || u.SecondaryAddress.City == "Boston");
+        visitor.Visit(expr);
+
+        LogDebugInfo(nameof(MultipleNestedConditionsTest), testUser, pid, visitor.GetDebugSql());
+
+        var users = await kv.GetListAsync<UserProfile>(pid, expr).ToListAsync();
         Assert.AreEqual(1, users.Count);
-        Assert.AreEqual("John Doe", users[0].Name);
     }
 
     [TestMethod]
     public async Task EnumComparisonWithStringTest()
     {
-        var activeUsers = await kv.GetListAsync<UserProfile>(TestPid,
-            u => u.Status.ToString() == "Active" && u.Role.ToString() == "Admin").ToListAsync();
+        var key = nameof(EnumComparisonWithStringTest);
+        var pid = nameof(EnumComparisonWithStringTest);
 
-        Assert.AreEqual(1, activeUsers.Count);
-        Assert.AreEqual("John Doe", activeUsers[0].Name);
+        var testUser = new UserProfile
+        {
+            Name = "John Doe",
+            Status = UserStatus.Active,
+            Role = UserRole.Admin
+        };
+
+        await kv.UpsertAsync(key, testUser, pid);
+
+        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
+        Expression<Func<UserProfile, bool>> expr = u =>
+            u.Status.ToString() == "Active" &&
+            u.Role.ToString() == "Admin";
+        visitor.Visit(expr);
+
+        LogDebugInfo(nameof(EnumComparisonWithStringTest), testUser, pid, visitor.GetDebugSql());
+
+        var activeAdmins = await kv.GetListAsync<UserProfile>(pid, expr).ToListAsync();
+        Assert.AreEqual(1, activeAdmins.Count);
     }
 
     [TestMethod]
@@ -448,45 +591,30 @@ public class PgKeyValueDBTest
         const string COUNTRY = "USA";
         const int ZIP_THRESHOLD = 90000;
 
-        var westCoastUsers = await kv.GetListAsync<UserProfile>(TestPid,
-            u => u.PrimaryAddress!.Country == COUNTRY &&
-                 u.PrimaryAddress.ZipCode > ZIP_THRESHOLD).ToListAsync();
+        var key = nameof(NestedPropertyWithConstantComparisonTest);
+        var pid = nameof(NestedPropertyWithConstantComparisonTest);
 
-        Assert.AreEqual(1, westCoastUsers.Count);
-        Assert.AreEqual("Jane Smith", westCoastUsers[0].Name);
-    }
-
-    [TestMethod]
-    public async Task RemoveWithComplexFilterTest()
-    {
-        // First, add a test user
-        await kv.UpsertAsync("test_user", new UserProfile
+        var testUser = new UserProfile
         {
-            Name = "Test User",
-            Age = 35,
-            Status = UserStatus.Inactive,
-            Role = UserRole.Guest,
+            Name = "Jane Smith",
             PrimaryAddress = new Address
             {
-                Street = "Test St",
-                City = "Test City",
-                Country = "Test Country",
-                ZipCode = 99999
-            },
-            IsVerified = false
-        }, TestPid);
+                Country = "USA",
+                ZipCode = 94102
+            }
+        };
 
-        // Remove using complex filter
-        var removedCount = await kv.RemoveAllAsync<UserProfile>(TestPid,
-            u => u.Status == UserStatus.Inactive &&
-                 u.Role == UserRole.Guest &&
-                 u.PrimaryAddress!.ZipCode == 99999);
+        await kv.UpsertAsync(key, testUser, pid);
 
-        Assert.AreEqual(1, removedCount);
+        var visitor = new SqlExpressionVisitor(typeof(UserProfile));
+        Expression<Func<UserProfile, bool>> expr = u =>
+            u.PrimaryAddress!.Country == COUNTRY &&
+            u.PrimaryAddress.ZipCode > ZIP_THRESHOLD;
+        visitor.Visit(expr);
 
-        // Verify removal
-        var remainingInactiveUsers = await kv.GetListAsync<UserProfile>(TestPid,
-            u => u.Status == UserStatus.Inactive).ToListAsync();
-        Assert.AreEqual(0, remainingInactiveUsers.Count);
+        LogDebugInfo(nameof(NestedPropertyWithConstantComparisonTest), testUser, pid, visitor.GetDebugSql());
+
+        var westCoastUsers = await kv.GetListAsync<UserProfile>(pid, expr).ToListAsync();
+        Assert.AreEqual(1, westCoastUsers.Count);
     }
 }

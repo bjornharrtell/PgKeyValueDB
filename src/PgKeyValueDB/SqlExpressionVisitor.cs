@@ -6,7 +6,7 @@ using NpgsqlTypes;
 
 namespace Wololo.PgKeyValueDB;
 
-internal class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
+public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
 {
     private readonly List<NpgsqlParameter> parameters = [];
     private readonly StringBuilder whereClause = new();
@@ -16,49 +16,125 @@ internal class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
     public string WhereClause => whereClause.ToString();
     public NpgsqlParameter[] Parameters => parameters.ToArray();
 
+    // Add this method to get the complete SQL for debugging
+    public string GetDebugSql()
+    {
+        var sql = new StringBuilder();
+        sql.AppendLine("Generated SQL:");
+        sql.AppendLine(WhereClause);
+        sql.AppendLine("\nParameters:");
+        foreach (var param in Parameters)
+        {
+            sql.AppendLine($"  @{param.ParameterName} = {param.Value} ({param.NpgsqlDbType})");
+        }
+        return sql.ToString();
+    }
+
     protected override Expression VisitBinary(BinaryExpression node)
     {
         whereClause.Append('(');
-        Visit(node.Left);
 
-        string op = node.NodeType switch
+        // Special handling for enum comparisons
+        if (node.Left.Type.IsEnum || node.Right.Type.IsEnum)
         {
-            ExpressionType.Equal => " = ",
-            ExpressionType.NotEqual => " != ",
-            ExpressionType.GreaterThan => " > ",
-            ExpressionType.GreaterThanOrEqual => " >= ",
-            ExpressionType.LessThan => " < ",
-            ExpressionType.LessThanOrEqual => " <= ",
-            ExpressionType.AndAlso => " AND ",
-            ExpressionType.OrElse => " OR ",
-            _ => throw new NotSupportedException($"Operation {node.NodeType} is not supported")
-        };
+            // If comparing enum values directly (not using ToString)
+            if (!IsToStringCall(node.Left) && !IsToStringCall(node.Right))
+            {
+                Visit(node.Left);
+                whereClause.Append(GetOperator(node.NodeType));
+                Visit(node.Right);
+            }
+            else
+            {
+                // Handle ToString comparison
+                Visit(node.Left);
+                whereClause.Append(GetOperator(node.NodeType));
+                Visit(node.Right);
+            }
+        }
+        else if (IsNumericType(node.Left.Type) || IsNumericType(node.Right.Type))
+        {
+            var numericType = GetCommonNumericType(node.Left.Type, node.Right.Type);
+            Visit(node.Left);
+            whereClause.Append($"::{numericType}");
+            whereClause.Append(GetOperator(node.NodeType));
+            Visit(node.Right);
+            whereClause.Append($"::{numericType}");
+        }
+        else
+        {
+            Visit(node.Left);
+            whereClause.Append(GetOperator(node.NodeType));
+            Visit(node.Right);
+        }
 
-        whereClause.Append(op);
-        Visit(node.Right);
         whereClause.Append(')');
-
         return node;
     }
 
+    private static bool IsNumericType(Type type)
+    {
+        type = Nullable.GetUnderlyingType(type) ?? type;
+        return type == typeof(int) || type == typeof(long) || type == typeof(decimal) ||
+               type == typeof(double) || type == typeof(float) || type == typeof(short);
+    }
+
+    private static string GetCommonNumericType(Type type1, Type type2)
+    {
+        if (type1 == typeof(decimal) || type2 == typeof(decimal)) return "numeric";
+        if (type1 == typeof(double) || type2 == typeof(double)) return "double precision";
+        if (type1 == typeof(float) || type2 == typeof(float)) return "real";
+        if (type1 == typeof(long) || type2 == typeof(long)) return "bigint";
+        return "integer";
+    }
+
+    private static string GetOperator(ExpressionType nodeType) => nodeType switch
+    {
+        ExpressionType.Equal => " = ",
+        ExpressionType.NotEqual => " != ",
+        ExpressionType.GreaterThan => " > ",
+        ExpressionType.GreaterThanOrEqual => " >= ",
+        ExpressionType.LessThan => " < ",
+        ExpressionType.LessThanOrEqual => " <= ",
+        ExpressionType.AndAlso => " AND ",
+        ExpressionType.OrElse => " OR ",
+        _ => throw new NotSupportedException($"Operation {nodeType} is not supported")
+    };
+
     protected override Expression VisitMethodCall(MethodCallExpression node)
     {
+        // Special handling for enum ToString()
+        if (node.Method.Name == nameof(ToString) && node.Object?.Type.IsEnum == true)
+        {
+            whereClause.Append($"CASE (");
+            Visit(node.Object);
+            whereClause.Append(")");
+
+            // Add WHEN clauses for each enum value
+            var enumType = node.Object.Type;
+            var enumValues = Enum.GetValues(enumType);
+            foreach (var enumValue in enumValues)
+            {
+                whereClause.Append($" WHEN {Convert.ToInt32(enumValue)} THEN '{enumValue}'");
+            }
+            whereClause.Append(" END");
+
+            return node;
+        }
+
         if (node.Method.DeclaringType == typeof(string))
         {
             switch (node.Method.Name)
             {
                 case nameof(object.Equals) or nameof(string.Equals):
-                    // Handle both instance and static method calls
                     if (node.Object != null)
                     {
-                        // Instance method: str.Equals(other)
                         Visit(node.Object);
                         whereClause.Append(" = ");
                         Visit(node.Arguments[0]);
                     }
                     else
                     {
-                        // Static method: string.Equals(str1, str2)
                         Visit(node.Arguments[0]);
                         whereClause.Append(" = ");
                         Visit(node.Arguments[1]);
@@ -96,44 +172,48 @@ internal class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
                     Visit(node.Object);
                     whereClause.Append(")");
                     return node;
-
-                case nameof(string.Trim):
-                    whereClause.Append("TRIM(");
-                    Visit(node.Object);
-                    whereClause.Append(")");
-                    return node;
-
-                case nameof(string.TrimStart):
-                    whereClause.Append("LTRIM(");
-                    Visit(node.Object);
-                    whereClause.Append(")");
-                    return node;
-
-                case nameof(string.TrimEnd):
-                    whereClause.Append("RTRIM(");
-                    Visit(node.Object);
-                    whereClause.Append(")");
-                    return node;
-
-                case nameof(string.Replace):
-                    whereClause.Append("REPLACE(");
-                    Visit(node.Object);
-                    whereClause.Append(", ");
-                    Visit(node.Arguments[0]);
-                    whereClause.Append(", ");
-                    Visit(node.Arguments[1]);
-                    whereClause.Append(")");
-                    return node;
-
-                case nameof(string.Length):
-                    whereClause.Append("LENGTH(");
-                    Visit(node.Object);
-                    whereClause.Append(")");
-                    return node;
             }
         }
 
         throw new NotSupportedException($"Method {node.Method.Name} is not supported");
+    }
+
+    private static string BuildJsonPath(MemberInfo member, string parentPath = "value")
+    {
+        var memberType = GetMemberType(member);
+
+        string cast;
+        if (memberType.IsEnum)
+        {
+            // For enums, get the numeric value
+            cast = "::integer";
+        }
+        else if (IsNumericType(memberType))
+        {
+            cast = memberType switch
+            {
+                Type t when t == typeof(decimal) => "::numeric",
+                Type t when t == typeof(double) => "::double precision",
+                Type t when t == typeof(float) => "::real",
+                Type t when t == typeof(long) => "::bigint",
+                _ => "::integer"
+            };
+        }
+        else if (memberType == typeof(bool))
+        {
+            cast = "::boolean";
+        }
+        else
+        {
+            cast = "::text";
+        }
+
+        if (parentPath != "value")
+        {
+            return $"({parentPath} ->> '{member.Name}'){cast}";
+        }
+
+        return $"(value ->> '{member.Name}'){cast}";
     }
 
     private static Type GetMemberType(MemberInfo member) => member switch
@@ -143,102 +223,24 @@ internal class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
         _ => throw new NotSupportedException($"Member type {member.MemberType} is not supported")
     };
 
-    private static (NpgsqlDbType npgsqlType, string postgresType) GetTypeMapping(Type type)
-    {
-        type = Nullable.GetUnderlyingType(type) ?? type;
-
-        if (type.IsEnum)
-            return (NpgsqlDbType.Text, "text");
-
-        return type switch
-        {
-            Type t when t == typeof(int) => (NpgsqlDbType.Integer, "integer"),
-            Type t when t == typeof(long) => (NpgsqlDbType.Bigint, "bigint"),
-            Type t when t == typeof(short) => (NpgsqlDbType.Smallint, "smallint"),
-            Type t when t == typeof(decimal) => (NpgsqlDbType.Numeric, "numeric"),
-            Type t when t == typeof(double) => (NpgsqlDbType.Double, "double precision"),
-            Type t when t == typeof(float) => (NpgsqlDbType.Real, "real"),
-            Type t when t == typeof(bool) => (NpgsqlDbType.Boolean, "boolean"),
-            Type t when t == typeof(string) => (NpgsqlDbType.Text, "text"),
-            Type t when t == typeof(DateTime) => (NpgsqlDbType.Timestamp, "timestamp"),
-            Type t when t == typeof(DateTimeOffset) => (NpgsqlDbType.TimestampTz, "timestamptz"),
-            Type t when t == typeof(Guid) => (NpgsqlDbType.Uuid, "uuid"),
-            _ => (NpgsqlDbType.Text, "text")
-        };
-    }
-
-    protected override Expression VisitConstant(ConstantExpression node)
-    {
-        parameterIndex++;
-        var value = node.Value;
-        var (npgsqlType, _) = GetTypeMapping(node.Type);
-
-        // Convert enum values to their string representation for parameters
-        if (value != null && value.GetType().IsEnum)
-        {
-            value = value.ToString();
-        }
-
-        var parameter = new NpgsqlParameter
-        {
-            ParameterName = $"p{parameterIndex}",
-            Value = value ?? DBNull.Value,
-            NpgsqlDbType = npgsqlType
-        };
-        parameters.Add(parameter);
-        whereClause.Append($"@{parameter.ParameterName}");
-        return node;
-    }
-
-    private static string BuildJsonPath(MemberInfo member)
-    {
-        var memberType = member switch
-        {
-            PropertyInfo prop => prop.PropertyType,
-            FieldInfo field => field.FieldType,
-            _ => throw new NotSupportedException($"Member type {member.MemberType} is not supported")
-        };
-
-        var (_, postgresType) = GetTypeMapping(memberType);
-        return $"cast(value ->> '{member.Name}' as {postgresType})";
-    }
-
     protected override Expression VisitMember(MemberExpression node)
     {
-        // Handle property access on a constant
         if (node.Expression?.NodeType == ExpressionType.Constant)
         {
             var value = Expression.Lambda(node).Compile().DynamicInvoke();
-            parameterIndex++;
-            var (npgsqlType, _) = GetTypeMapping(node.Type);
-
-            var parameter = new NpgsqlParameter
-            {
-                ParameterName = $"p{parameterIndex}",
-                Value = value ?? DBNull.Value,
-                NpgsqlDbType = npgsqlType
-            };
-            parameters.Add(parameter);
-            whereClause.Append($"@{parameter.ParameterName}");
+            AddParameter(value, node.Type);
             return node;
         }
 
-        // Handle property access on the parameter (p => p.Value)
+        if (node.Expression is MemberExpression parentMember)
+        {
+            var parentPath = BuildNestedJsonPath(parentMember);
+            whereClause.Append(BuildJsonPath(node.Member, parentPath));
+            return node;
+        }
+
         if (node.Expression?.NodeType == ExpressionType.Parameter)
         {
-            whereClause.Append(BuildJsonPath(node.Member));
-            return node;
-        }
-
-        // Handle property access in method chains (p => p.Value.Length)
-        if (node.Expression is MemberExpression memberExpr)
-        {
-            if (node.Member.DeclaringType == typeof(string))
-            {
-                Visit(node.Expression);
-                return node;
-            }
-
             whereClause.Append(BuildJsonPath(node.Member));
             return node;
         }
@@ -246,58 +248,120 @@ internal class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
         throw new NotSupportedException($"Unsupported member access: {node.Member.Name} on {node.Expression?.NodeType}");
     }
 
-    private Expression BuildPropertyAccess(PropertyInfo property)
+    private string BuildNestedJsonPath(MemberExpression expression)
     {
-        var jsonPath = $"cast(value ->> '{property.Name}' as {GetPostgresType(property.PropertyType)})";
-        whereClause.Append(jsonPath);
-        return Expression.Property(null, property);
+        var path = new Stack<string>();
+        var current = expression;
+
+        while (current != null)
+        {
+            if (current.Expression?.NodeType == ExpressionType.Parameter)
+            {
+                path.Push(current.Member.Name);
+                break;
+            }
+            else if (current.Expression is MemberExpression parent)
+            {
+                path.Push(current.Member.Name);
+                current = parent;
+            }
+            else
+                break;
+        }
+
+        var jsonPath = "value";
+        foreach (var segment in path.Reverse())
+        {
+            jsonPath = $"({jsonPath} -> '{segment}')";
+        }
+        return jsonPath;
     }
 
-    private static bool IsSimpleType(Type type)
+    protected override Expression VisitConstant(ConstantExpression node)
     {
-        return type.IsPrimitive
-            || type == typeof(string)
-            || type == typeof(decimal)
-            || type == typeof(DateTime)
-            || type == typeof(DateTimeOffset)
-            || type == typeof(Guid)
-            || (Nullable.GetUnderlyingType(type)?.IsPrimitive ?? false);
+        AddParameter(node.Value, node.Type);
+        return node;
+    }
+
+    private static bool IsToStringCall(Expression expr)
+    {
+        return expr is MethodCallExpression methodCall &&
+               methodCall.Method.Name == nameof(ToString);
+    }
+
+    private void AddParameter(object? value, Type type)
+    {
+        parameterIndex++;
+        var paramName = $"p{parameterIndex}";
+
+        if (value == null)
+        {
+            parameters.Add(new NpgsqlParameter
+            {
+                ParameterName = paramName,
+                Value = DBNull.Value,
+                NpgsqlDbType = GetNpgsqlType(type)
+            });
+            whereClause.Append($"@{paramName}");
+            return;
+        }
+
+        if (type.IsEnum)
+        {
+            // Store enum as integer if not using ToString
+            var lastExpression = whereClause.ToString().TrimEnd();
+            if (!lastExpression.Contains("CASE"))
+            {
+                parameters.Add(new NpgsqlParameter
+                {
+                    ParameterName = paramName,
+                    Value = Convert.ToInt32(value),
+                    NpgsqlDbType = NpgsqlDbType.Integer
+                });
+            }
+            else
+            {
+                // For ToString comparisons, use the string value
+                parameters.Add(new NpgsqlParameter
+                {
+                    ParameterName = paramName,
+                    Value = value.ToString(),
+                    NpgsqlDbType = NpgsqlDbType.Text
+                });
+            }
+            whereClause.Append($"@{paramName}");
+            return;
+        }
+
+        var npgsqlType = GetNpgsqlType(type);
+        parameters.Add(new NpgsqlParameter
+        {
+            ParameterName = paramName,
+            Value = value,
+            NpgsqlDbType = npgsqlType
+        });
+        whereClause.Append($"@{paramName}");
     }
 
     private static NpgsqlDbType GetNpgsqlType(Type type)
     {
-        // Handle enum types
-        if (type.IsEnum)
-        {
-            return NpgsqlDbType.Integer; // Store enums as integers
-        }
+        type = Nullable.GetUnderlyingType(type) ?? type;
 
-        return Type.GetTypeCode(Nullable.GetUnderlyingType(type) ?? type) switch
+        if (type.IsEnum)
+            return NpgsqlDbType.Text;
+
+        return Type.GetTypeCode(type) switch
         {
-            TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64 => NpgsqlDbType.Bigint,
+            TypeCode.Int16 => NpgsqlDbType.Smallint,
+            TypeCode.Int32 => NpgsqlDbType.Integer,
+            TypeCode.Int64 => NpgsqlDbType.Bigint,
             TypeCode.Decimal => NpgsqlDbType.Numeric,
-            TypeCode.Double or TypeCode.Single => NpgsqlDbType.Double,
+            TypeCode.Double => NpgsqlDbType.Double,
+            TypeCode.Single => NpgsqlDbType.Real,
             TypeCode.Boolean => NpgsqlDbType.Boolean,
-            TypeCode.String or TypeCode.Char => NpgsqlDbType.Text,
+            TypeCode.String => NpgsqlDbType.Text,
+            TypeCode.DateTime => NpgsqlDbType.Timestamp,
             _ => NpgsqlDbType.Text
-        };
-    }
-
-    private static string GetPostgresType(Type type)
-    {
-        // Handle enum types
-        if (type.IsEnum)
-        {
-            return "text"; // Compare as text since that's how it's stored in JSONB
-        }
-
-        return Type.GetTypeCode(Nullable.GetUnderlyingType(type) ?? type) switch
-        {
-            TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64 => "numeric",
-            TypeCode.Decimal or TypeCode.Double or TypeCode.Single => "numeric",
-            TypeCode.Boolean => "boolean",
-            TypeCode.String or TypeCode.Char => "text",
-            _ => "text"
         };
     }
 }
