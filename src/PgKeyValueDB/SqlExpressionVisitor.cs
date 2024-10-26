@@ -172,16 +172,6 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
     private static string BuildJsonPath(MemberInfo member, string parentPath = "value")
     {
         var memberType = GetMemberType(member);
-
-        if (memberType == typeof(bool))
-        {
-            // Cast JSON boolean string to boolean using PostgreSQL's built-in conversion
-            var path = parentPath != "value" 
-                ? $"{parentPath} ->> '{member.Name}'" 
-                : $"value ->> '{member.Name}'";
-            return $"CASE WHEN {path} = 'true' THEN true WHEN {path} = 'false' THEN false END";
-        }
-        
         string cast;
         if (memberType.IsEnum)
         {
@@ -198,11 +188,14 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
                 _ => "::integer"
             };
         }
+        else if (memberType == typeof(bool) || memberType == typeof(bool?))
+        {
+            cast = "::bool";
+        }
         else
         {
             cast = "::text";
         }
-
         if (parentPath != "value")
         {
             return $"({parentPath} ->> '{member.Name}'){cast}";

@@ -139,6 +139,7 @@ public class PgKeyValueDB
             visitor.Visit(where);
             baseParams.AddRange(visitor.Parameters);
             sql = $"{sql} AND {visitor.WhereClause}";
+            Console.WriteLine("SQL: " + sql);
         }
         return new Ctx(sql, baseParams);
     }
@@ -163,6 +164,7 @@ public class PgKeyValueDB
         {
             sql += " limit @limit offset @offset";
         }
+        Console.WriteLine("SQL: " + sql);
         var result = dataSource.ExecuteListAsync<T>(new Ctx(sql, baseParams));
         return result;
     }

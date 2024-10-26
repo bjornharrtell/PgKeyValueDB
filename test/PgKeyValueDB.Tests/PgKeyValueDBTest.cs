@@ -37,7 +37,7 @@ public class UserProfile
     public Address? PrimaryAddress { get; set; }
     public Address? SecondaryAddress { get; set; }
     public List<string>? Tags { get; set; }
-    public bool IsVerified { get; set; }
+    public bool? IsVerified { get; set; }
 }
 
 public class Poco
@@ -287,6 +287,18 @@ public class PgKeyValueDBTest
     }
 
     [TestMethod]
+    public async void GetListFilterContainsTest()
+    {
+        var key1 = nameof(GetListFilterContainsTest) + "1";
+        var key2 = nameof(GetListFilterContainsTest) + "2";
+        var pid = nameof(GetListFilterContainsTest);
+        kv.Upsert(key1, new Poco { Value = key1 }, pid);
+        kv.Upsert(key2, new Poco { Value = key2 }, pid);
+        var list1 = await kv.GetListAsync<Poco>(pid, p => p.Value!.Contains(nameof(GetListFilterContainsTest))).ToListAsync();
+        Assert.AreEqual(2, list1.Count);
+    }
+
+    [TestMethod]
     public void CountFilterTest()
     {
         var key1 = nameof(CountFilterTest) + "1";
@@ -511,7 +523,7 @@ public class PgKeyValueDBTest
 
         var visitor = new SqlExpressionVisitor(typeof(UserProfile));
         Expression<Func<UserProfile, bool>> expr = u =>
-            u.IsVerified &&
+            u.IsVerified == true &&
             u.Role == UserRole.Admin &&
             u.PrimaryAddress!.Country == "USA" &&
             u.SecondaryAddress!.City == "Boston";
