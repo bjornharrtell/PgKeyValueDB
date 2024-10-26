@@ -25,7 +25,7 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
         sql.AppendLine("\nParameters:");
         foreach (var param in Parameters)
         {
-            sql.AppendLine($"  @{param.ParameterName} = {param.Value} ({param.NpgsqlDbType})");
+            sql.AppendLine($"  @{param.ParameterName} = {param.Value} ({param.NpgsqlDbType}) [{param.Value?.GetType()}]");
         }
         return sql.ToString();
     }
@@ -33,33 +33,24 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
     protected override Expression VisitBinary(BinaryExpression node)
     {
         whereClause.Append('(');
-
-        // Special handling for enum comparisons
-        if (node.Left.Type.IsEnum || node.Right.Type.IsEnum)
+        
+        // Special case for direct boolean comparisons with constants
+        if (node.NodeType == ExpressionType.Equal && 
+            (node.Left.Type == typeof(bool) || node.Right.Type == typeof(bool)))
         {
-            // If comparing enum values directly (not using ToString)
-            if (!IsToStringCall(node.Left) && !IsToStringCall(node.Right))
+            if (node.Left.NodeType == ExpressionType.MemberAccess)
             {
                 Visit(node.Left);
-                whereClause.Append(GetOperator(node.NodeType));
+                whereClause.Append("::boolean = ");
                 Visit(node.Right);
             }
             else
             {
-                // Handle ToString comparison
                 Visit(node.Left);
-                whereClause.Append(GetOperator(node.NodeType));
+                whereClause.Append(" = ");
                 Visit(node.Right);
+                whereClause.Append("::boolean");
             }
-        }
-        else if (IsNumericType(node.Left.Type) || IsNumericType(node.Right.Type))
-        {
-            var numericType = GetCommonNumericType(node.Left.Type, node.Right.Type);
-            Visit(node.Left);
-            whereClause.Append($"::{numericType}");
-            whereClause.Append(GetOperator(node.NodeType));
-            Visit(node.Right);
-            whereClause.Append($"::{numericType}");
         }
         else
         {
@@ -67,7 +58,7 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
             whereClause.Append(GetOperator(node.NodeType));
             Visit(node.Right);
         }
-
+        
         whereClause.Append(')');
         return node;
     }
@@ -182,10 +173,18 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
     {
         var memberType = GetMemberType(member);
 
+        if (memberType == typeof(bool))
+        {
+            // Cast JSON boolean string to boolean using PostgreSQL's built-in conversion
+            var path = parentPath != "value" 
+                ? $"{parentPath} ->> '{member.Name}'" 
+                : $"value ->> '{member.Name}'";
+            return $"CASE WHEN {path} = 'true' THEN true WHEN {path} = 'false' THEN false END";
+        }
+        
         string cast;
         if (memberType.IsEnum)
         {
-            // For enums, get the numeric value
             cast = "::integer";
         }
         else if (IsNumericType(memberType))
@@ -199,10 +198,6 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
                 _ => "::integer"
             };
         }
-        else if (memberType == typeof(bool))
-        {
-            cast = "::boolean";
-        }
         else
         {
             cast = "::text";
@@ -212,7 +207,6 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
         {
             return $"({parentPath} ->> '{member.Name}'){cast}";
         }
-
         return $"(value ->> '{member.Name}'){cast}";
     }
 
@@ -303,6 +297,18 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
                 NpgsqlDbType = GetNpgsqlType(type)
             });
             whereClause.Append($"@{paramName}");
+            return;
+        }
+
+        if (type == typeof(bool))
+        {
+            parameters.Add(new NpgsqlParameter
+            {
+                ParameterName = paramName,
+                Value = value,
+                NpgsqlDbType = NpgsqlDbType.Boolean
+            });
+            whereClause.Append($"@{paramName}::boolean");
             return;
         }
 
