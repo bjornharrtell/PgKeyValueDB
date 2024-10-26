@@ -11,7 +11,6 @@ public class PgKeyValueDB
     private readonly string schemaName;
     private readonly string tableName;
     private readonly string tableRef;
-
     const string DEFAULT_PID = "default";
 
     public PgKeyValueDB(NpgsqlDataSource dataSource, string schemaName, string tableName)
@@ -25,8 +24,7 @@ public class PgKeyValueDB
 
     private void Init()
     {
-        dataSource.Execute(new Ctx($@"create schema if not exists {schemaName}"));
-
+        dataSource.Execute(new Ctx($"create schema if not exists {schemaName}"));
         dataSource.Execute(new Ctx($@"create table if not exists {tableRef} (
     pid text check (char_length(id) between 1 and 255),
     id text check (char_length(id) between 1 and 255),
@@ -36,9 +34,9 @@ public class PgKeyValueDB
     expires timestamptz,
     primary key (pid, id)
 )", Prepare: false));
-        dataSource.Execute(new Ctx($@"create index if not exists idx_{schemaName}_{tableName}_created on {tableRef} (created)", Prepare: false));
-        dataSource.Execute(new Ctx($@"create index if not exists idx_{schemaName}_{tableName}_updated on {tableRef} (updated) where updated is not null", Prepare: false));
-        dataSource.Execute(new Ctx($@"create index if not exists idx_{schemaName}_{tableName}_expires on {tableRef} (expires) where expires is not null", Prepare: false));
+        dataSource.Execute(new Ctx($"create index if not exists idx_{schemaName}_{tableName}_created on {tableRef} (created)", Prepare: false));
+        dataSource.Execute(new Ctx($"create index if not exists idx_{schemaName}_{tableName}_updated on {tableRef} (updated) where updated is not null", Prepare: false));
+        dataSource.Execute(new Ctx($"create index if not exists idx_{schemaName}_{tableName}_expires on {tableRef} (expires) where expires is not null", Prepare: false));
     }
 
     static IEnumerable<NpgsqlParameter> CreateParams(string pid, string? id = null)
@@ -62,24 +60,15 @@ public class PgKeyValueDB
         return baseParams;
     }
 
-    string SelectSql =>
-        $"select value from {tableRef} where pid = @pid and id = @id and (expires is null or now() < expires)";
-    string CreateCreateSql =>
-        $"insert into {tableRef} (pid, id, value, created, expires) values (@pid, @id, @value, now(), @expires)";
-    string UpdateSql =>
-        $"update {tableRef} set value = @value, updated = now(), expires = @expires where pid = @pid and id = @id";
-    string UpsertSql =>
-        $"insert into {tableRef} (pid, id, value, created, expires) values (@pid, @id, @value, now(), @expires) on conflict (pid, id) do update set value = @value, updated = now(), expires = @expires";
-    string DeleteSql =>
-        $"delete from {tableRef} where pid = @pid and id = @id";
-    string DeleteAllSql =>
-        $"delete from {tableRef} where pid = @pid";
-    string DeleteAllExpiredSql =>
-        $"delete from {tableRef} where pid = @pid and now() >= expires";
-    string ExistsSql =>
-        $"select exists(select 1 from {tableRef} where pid = @pid and id = @id and (expires is null or now() < expires))";
-    string CountSql =>
-        $"select count(1) from {tableRef} where pid = @pid and (expires is null or now() < expires)";
+    string SelectSql => $"select value from {tableRef} where pid = @pid and id = @id and (expires is null or now() < expires)";
+    string CreateCreateSql => $"insert into {tableRef} (pid, id, value, created, expires) values (@pid, @id, @value, now(), @expires)";
+    string UpdateSql => $"update {tableRef} set value = @value, updated = now(), expires = @expires where pid = @pid and id = @id";
+    string UpsertSql => $"insert into {tableRef} (pid, id, value, created, expires) values (@pid, @id, @value, now(), @expires) on conflict (pid, id) do update set value = @value, updated = now(), expires = @expires";
+    string DeleteSql => $"delete from {tableRef} where pid = @pid and id = @id";
+    string DeleteAllSql => $"delete from {tableRef} where pid = @pid";
+    string DeleteAllExpiredSql => $"delete from {tableRef} where pid = @pid and now() >= expires";
+    string ExistsSql => $"select exists(select 1 from {tableRef} where pid = @pid and id = @id and (expires is null or now() < expires))";
+    string CountSql => $"select count(1) from {tableRef} where pid = @pid and (expires is null or now() < expires)";
 
     public bool Create<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null) =>
         dataSource.Execute(new Ctx(CreateCreateSql, CreateParams(pid, id, value, expires))) > 0;
@@ -126,13 +115,9 @@ public class PgKeyValueDB
     public async Task<long> CountAsync<T>(string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null) =>
         await dataSource.ExecuteAsync<long>(BuildCommandParams(CountSql, pid, where));
 
-
     private static Ctx BuildCommandParams<T>(string sql, string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null)
     {
-        var baseParams = new List<NpgsqlParameter>
-        {
-            new() { ParameterName = "pid", Value = pid }
-        };
+        var baseParams = new List<NpgsqlParameter> { new() { ParameterName = "pid", Value = pid } };
         if (where != null)
         {
             var visitor = new SqlExpressionVisitor(typeof(T));
@@ -163,8 +148,6 @@ public class PgKeyValueDB
         {
             sql += " limit @limit offset @offset";
         }
-        var result = dataSource.ExecuteListAsync<T>(new Ctx(sql, baseParams));
-        return result;
+        return dataSource.ExecuteListAsync<T>(new Ctx(sql, baseParams));
     }
-
 }
