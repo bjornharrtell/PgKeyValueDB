@@ -1,4 +1,5 @@
 ﻿using System.Linq.Expressions;
+using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
 using Ctx = NpgsqlDataSourceExtensions.NpgsqlCommandContext;
@@ -11,14 +12,16 @@ public class PgKeyValueDB
     private readonly string schemaName;
     private readonly string tableName;
     private readonly string tableRef;
+    public JsonSerializerOptions JsonSerializerOptions { get; init; }
     const string DEFAULT_PID = "default";
 
-    public PgKeyValueDB(NpgsqlDataSource dataSource, string schemaName, string tableName)
+    public PgKeyValueDB(NpgsqlDataSource dataSource, string schemaName, string tableName, JsonSerializerOptions jsonSerializerOptions)
     {
         this.dataSource = dataSource;
         this.schemaName = schemaName;
         this.tableName = tableName;
         this.tableRef = $"{schemaName}.{tableName}";
+        JsonSerializerOptions = jsonSerializerOptions;
         Init();
     }
 
@@ -115,15 +118,15 @@ public class PgKeyValueDB
     public async Task<long> CountAsync<T>(string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null) =>
         await dataSource.ExecuteAsync<long>(BuildCommandParams(CountSql, pid, where));
 
-    private static Ctx BuildCommandParams<T>(string sql, string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null)
+    private Ctx BuildCommandParams<T>(string sql, string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null)
     {
         var baseParams = new List<NpgsqlParameter> { new() { ParameterName = "pid", Value = pid } };
         if (where != null)
         {
-            var visitor = new SqlExpressionVisitor(typeof(T));
+            var visitor = new SqlExpressionVisitor(typeof(T), JsonSerializerOptions);
             visitor.Visit(where);
             baseParams.AddRange(visitor.Parameters);
-            sql = $"{sql} AND {visitor.WhereClause}";
+            sql = $"{sql} and {visitor.WhereClause}";
         }
         return new Ctx(sql, baseParams);
     }
@@ -139,15 +142,16 @@ public class PgKeyValueDB
         };
         if (where != null)
         {
-            var visitor = new SqlExpressionVisitor(typeof(T));
+            var visitor = new SqlExpressionVisitor(typeof(T), JsonSerializerOptions);
             visitor.Visit(where);
             baseParams.AddRange(visitor.Parameters);
-            sql = $"{sql} AND {visitor.WhereClause} limit @limit offset @offset";
+            sql = $"{sql} and {visitor.WhereClause} limit @limit offset @offset";
         }
         else
         {
             sql += " limit @limit offset @offset";
         }
+        Console.WriteLine(sql);
         return dataSource.ExecuteListAsync<T>(new Ctx(sql, baseParams));
     }
 }

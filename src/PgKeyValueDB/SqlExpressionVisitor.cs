@@ -1,17 +1,20 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
 
 namespace Wololo.PgKeyValueDB;
 
-public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
+public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonSerializerOptions) : ExpressionVisitor
 {
     private readonly List<NpgsqlParameter> parameters = [];
     private readonly StringBuilder whereClause = new();
     private int parameterIndex;
     private readonly Type documentType = documentType;
+    private readonly JsonSerializerOptions jsonSerializerOptions = jsonSerializerOptions;
+    private readonly JsonNamingPolicy propertyNamingPolicy = jsonSerializerOptions.PropertyNamingPolicy ?? JsonNamingPolicy.CamelCase;
 
     public string WhereClause => whereClause.ToString();
     public NpgsqlParameter[] Parameters => parameters.ToArray();
@@ -73,8 +76,8 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
         ExpressionType.GreaterThanOrEqual => " >= ",
         ExpressionType.LessThan => " < ",
         ExpressionType.LessThanOrEqual => " <= ",
-        ExpressionType.AndAlso => " AND ",
-        ExpressionType.OrElse => " OR ",
+        ExpressionType.AndAlso => " and ",
+        ExpressionType.OrElse => " or ",
         _ => throw new NotSupportedException($"Operation {nodeType} is not supported")
     };
 
@@ -83,7 +86,7 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
         // Special handling for enum ToString()
         if (node.Method.Name == nameof(ToString) && node.Object?.Type.IsEnum == true)
         {
-            whereClause.Append($"CASE (");
+            whereClause.Append($"case (");
             Visit(node.Object);
             whereClause.Append(")");
 
@@ -92,9 +95,9 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
             var enumValues = Enum.GetValues(enumType);
             foreach (var enumValue in enumValues)
             {
-                whereClause.Append($" WHEN {Convert.ToInt32(enumValue)} THEN '{enumValue}'");
+                whereClause.Append($" when {Convert.ToInt32(enumValue)} then '{enumValue}'");
             }
-            whereClause.Append(" END");
+            whereClause.Append(" end");
 
             return node;
         }
@@ -116,7 +119,7 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
                     }
 
                     Visit(node.Object);
-                    whereClause.Append(isCaseInsensitive ? " ILIKE " : " LIKE ");
+                    whereClause.Append(isCaseInsensitive ? " ILIKE " : " like ");
 
                     // Get the search value and create pattern parameter
                     var searchValue = Expression.Lambda(node.Arguments[0]).Compile().DynamicInvoke()?.ToString();
@@ -134,14 +137,14 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
 
                 case nameof(string.StartsWith):
                     Visit(node.Object);
-                    whereClause.Append(" LIKE ");
+                    whereClause.Append(" like ");
                     Visit(node.Arguments[0]);
                     whereClause.Append(" || '%'");
                     return node;
 
                 case nameof(string.EndsWith):
                     Visit(node.Object);
-                    whereClause.Append(" LIKE '%' || ");
+                    whereClause.Append(" like '%' || ");
                     Visit(node.Arguments[0]);
                     return node;
 
@@ -161,13 +164,13 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
                     return node;
 
                 case nameof(string.ToLower):
-                    whereClause.Append("LOWER(");
+                    whereClause.Append("lower(");
                     Visit(node.Object);
                     whereClause.Append(")");
                     return node;
 
                 case nameof(string.ToUpper):
-                    whereClause.Append("UPPER(");
+                    whereClause.Append("upper(");
                     Visit(node.Object);
                     whereClause.Append(")");
                     return node;
@@ -177,7 +180,7 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
         throw new NotSupportedException($"Method {node.Method.Name} is not supported");
     }
 
-    private static string BuildJsonPath(MemberInfo member, string parentPath = "value")
+    private string BuildJsonPath(MemberInfo member, string parentPath = "value")
     {
         var memberType = GetMemberType(member);
         string cast;
@@ -204,11 +207,12 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
         {
             cast = "::text";
         }
+        var name = propertyNamingPolicy.ConvertName(member.Name);
         if (parentPath != "value")
         {
-            return $"({parentPath} ->> '{member.Name}'){cast}";
+            return $"({parentPath} ->> '{name}'){cast}";
         }
-        return $"(value ->> '{member.Name}'){cast}";
+        return $"(value ->> '{name}'){cast}";
     }
 
     private static Type GetMemberType(MemberInfo member) => member switch
@@ -278,7 +282,8 @@ public class SqlExpressionVisitor(Type documentType) : ExpressionVisitor
         var jsonPath = "value";
         foreach (var segment in path.Reverse())
         {
-            jsonPath = $"({jsonPath} -> '{segment}')";
+            var name = propertyNamingPolicy.ConvertName(segment);
+            jsonPath = $"({jsonPath} -> '{name}')";
         }
         return jsonPath;
     }

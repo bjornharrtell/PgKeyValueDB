@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using Wololo.PgKeyValueDB;
@@ -25,13 +26,20 @@ public class PgKeyValueDBBuilder(string connectionString, object? serviceKey = n
 
     public string SchemaName { get; set; } = DEFAULT_SCHEMA_NAME;
     public string TableName { get; set; } = DEFAULT_TABLE_NAME;
+    public JsonSerializerOptions JsonSerializerOptions { get; set; } = new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
 
     string CreateTableName() => serviceKey == null ? TableName : $"{TableName}_{serviceKey}";
 
     internal object Build()
     {
-        var dataSource = new NpgsqlDataSourceBuilder(connectionString).EnableDynamicJson().Build();
+        var dataSource = new NpgsqlDataSourceBuilder(connectionString)
+            .EnableDynamicJson()
+            .ConfigureJsonOptions(JsonSerializerOptions)
+            .Build();
         var tableName = CreateTableName();
-        return new PgKeyValueDB(dataSource, SchemaName, tableName);
+        return new PgKeyValueDB(dataSource, SchemaName, tableName, JsonSerializerOptions);
     }
 }
