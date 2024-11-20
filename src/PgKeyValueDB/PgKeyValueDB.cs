@@ -151,7 +151,6 @@ public class PgKeyValueDB
         {
             sql += " limit @limit offset @offset";
         }
-        Console.WriteLine(sql);
         return dataSource.ExecuteListAsync<T>(new Ctx(sql, baseParams));
     }
 }
