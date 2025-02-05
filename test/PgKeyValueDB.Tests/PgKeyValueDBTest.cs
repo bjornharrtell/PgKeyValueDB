@@ -434,6 +434,29 @@ public class PgKeyValueDBTest
     }
 
     [TestMethod]
+    public async Task ComplexQuery2Test()
+    {
+        var key = nameof(ComplexQueryTest);
+        var pid = nameof(ComplexQueryTest);
+        var testUser = new UserProfile
+        {
+            Name = "John Doe",
+            IsVerified = true,
+            Role = UserRole.Admin,
+            PrimaryAddress = new Address { Country = "USA" },
+            SecondaryAddress = new Address { City = "Boston" }
+        };
+        await kv.UpsertAsync(key, testUser, pid);
+        Expression<Func<UserProfile, bool>> expr = u =>
+            !(u.IsVerified == false) &&
+            u.Role == UserRole.Admin &&
+            u.PrimaryAddress!.Country == "USA" &&
+            u.SecondaryAddress!.City == "Boston";
+        var verifiedAdmins = await kv.GetListAsync(pid, expr).ToListAsync();
+        Assert.AreEqual(1, verifiedAdmins.Count);
+    }
+
+    [TestMethod]
     public async Task MultipleNestedConditionsTest()
     {
         var key = nameof(MultipleNestedConditionsTest);
