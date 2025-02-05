@@ -387,4 +387,17 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
             _ => NpgsqlDbType.Text
         };
     }
+
+    protected override Expression VisitUnary(UnaryExpression node)
+    {
+        if (node.NodeType == ExpressionType.Not)
+        {
+            whereClause.Append("not (");
+            Visit(node.Operand);
+            whereClause.Append(")");
+            return node;
+        }
+        
+        return base.VisitUnary(node);
+    }
 }
