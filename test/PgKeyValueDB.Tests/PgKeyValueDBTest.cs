@@ -505,4 +505,34 @@ public class PgKeyValueDBTest
         Assert.IsTrue(results.Any(u => u.Name == "John Smith"));
         Assert.IsTrue(results.Any(u => u.DisplayName == "Johnny"));
     }
+
+    [TestMethod]
+    public async Task FilterByTagTest()
+    {
+        var key1 = nameof(FilterByTagTest) + "1";
+        var key2 = nameof(FilterByTagTest) + "2";
+        var pid = nameof(FilterByTagTest);
+
+        var user1 = new UserProfile
+        {
+            Name = "Alice",
+            Tags = new List<string> { "vip", "early-adopter" }
+        };
+
+        var user2 = new UserProfile
+        {
+            Name = "Bob",
+            Tags = new List<string> { "regular", "new-user" }
+        };
+
+        await kv.UpsertAsync(key1, user1, pid);
+        await kv.UpsertAsync(key2, user2, pid);
+
+        // This query should filter users by the "vip" tag
+        Expression<Func<UserProfile, bool>> expr = u => u.Tags!.Contains("vip");
+        var vipUsers = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        Assert.AreEqual(1, vipUsers.Count);
+        Assert.AreEqual("Alice", vipUsers[0].Name);
+    }
 }
