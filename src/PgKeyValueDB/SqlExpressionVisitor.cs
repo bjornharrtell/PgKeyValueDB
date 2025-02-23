@@ -271,6 +271,13 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
             return node;
         }
 
+        // Return convert expressions as is
+        if (node.Expression?.NodeType == ExpressionType.Convert)
+        {
+            whereClause.Append(BuildJsonPath(node.Member));
+            return node;
+        }
+
         throw new NotSupportedException($"Unsupported member access: {node.Member.Name} on {node.Expression?.NodeType}");
     }
 
@@ -413,7 +420,7 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
             whereClause.Append(")");
             return node;
         }
-        
+
         return base.VisitUnary(node);
     }
 }
