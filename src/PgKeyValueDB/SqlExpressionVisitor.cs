@@ -177,6 +177,22 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
             }
         }
 
+        // Handle Contains for collections
+        if (node.Method.Name == nameof(Enumerable.Contains) && node.Arguments.Count == 1)
+        {
+            var collection = node.Object;
+            var item = node.Arguments[0];
+
+            if (collection is MemberExpression memberExpression)
+            {
+                var parentPath = BuildNestedJsonPath(memberExpression);
+                whereClause.Append($"jsonb_exists({parentPath}, ");
+                Visit(item);
+                whereClause.Append(")");
+                return node;
+            }
+        }
+
         throw new NotSupportedException($"Method {node.Method.Name} is not supported");
     }
 
