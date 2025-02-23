@@ -49,18 +49,13 @@ public class PgKeyValueDBTest
 {
     private static PgServer pg = null!;
     private static PgKeyValueDB kv = null!;
-    private const string TestPid = "AdvancedTest";
-    private static TestContext testContext = null!;
-    private static string connectionString = null!;
 
     [ClassInitialize]
     public static void ClassInit(TestContext context)
     {
-        testContext = context;
         IServiceCollection services = new ServiceCollection();
         pg = new PgServer("16.2.0", clearWorkingDirOnStart: true, clearInstanceDirOnStop: true);
         pg.Start();
-        connectionString = $"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres";
         services.AddPgKeyValueDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres", b =>
         {
             b.SchemaName = "pgkeyvaluetest";
@@ -75,57 +70,6 @@ public class PgKeyValueDBTest
     {
         pg?.Stop();
         pg?.Dispose();
-    }
-
-    private static async Task SetupTestData()
-    {
-        var users = new[]
-        {
-            new UserProfile
-            {
-                Name = "John Doe",
-                Age = 30,
-                Status = UserStatus.Active,
-                Role = UserRole.Admin,
-                PrimaryAddress = new Address
-                {
-                    Street = "123 Main St",
-                    City = "New York",
-                    Country = "USA",
-                    ZipCode = 10001
-                },
-                SecondaryAddress = new Address
-                {
-                    Street = "456 Park Ave",
-                    City = "Boston",
-                    Country = "USA",
-                    ZipCode = 02108
-                },
-                Tags = ["vip", "early-adopter"],
-                IsVerified = true
-            },
-            new UserProfile
-            {
-                Name = "Jane Smith",
-                Age = 25,
-                Status = UserStatus.Pending,
-                Role = UserRole.User,
-                PrimaryAddress = new Address
-                {
-                    Street = "789 Oak Rd",
-                    City = "San Francisco",
-                    Country = "USA",
-                    ZipCode = 94102
-                },
-                Tags = ["beta-tester"],
-                IsVerified = false
-            }
-        };
-
-        for (int i = 0; i < users.Length; i++)
-        {
-            await kv.UpsertAsync($"user_{i}", users[i], TestPid);
-        }
     }
 
     [TestMethod]
