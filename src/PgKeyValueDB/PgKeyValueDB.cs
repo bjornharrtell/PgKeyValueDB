@@ -70,6 +70,7 @@ public class PgKeyValueDB
     string DeleteSql => $"delete from {tableRef} where pid = @pid and id = @id";
     string DeleteAllSql => $"delete from {tableRef} where pid = @pid";
     string DeleteAllExpiredSql => $"delete from {tableRef} where pid = @pid and now() >= expires";
+    string DeleteAllExpiredGlobalSql => $"delete from {tableRef} where now() >= expires";
     string ExistsSql => $"select exists(select 1 from {tableRef} where pid = @pid and id = @id and (expires is null or now() < expires))";
     string CountSql => $"select count(1) from {tableRef} where pid = @pid and (expires is null or now() < expires)";
 
@@ -101,6 +102,10 @@ public class PgKeyValueDB
         dataSource.Execute(new Ctx(DeleteAllExpiredSql, CreateParams(pid)));
     public async Task<int> RemoveAllExpiredAsync(string pid = DEFAULT_PID) =>
         await dataSource.ExecuteAsync(new Ctx(DeleteAllExpiredSql, CreateParams(pid)));
+    public int RemoveAllExpiredGlobal() =>
+        dataSource.Execute(new Ctx(DeleteAllExpiredGlobalSql));
+    public async Task<int> RemoveAllExpiredGlobalAsync() =>
+        await dataSource.ExecuteAsync(new Ctx(DeleteAllExpiredGlobalSql));
     public T? Get<T>(string id, string pid = DEFAULT_PID) =>
         dataSource.Execute<T>(new Ctx(SelectSql, CreateParams(pid, id)));
     public async Task<T?> GetAsync<T>(string id, string pid = DEFAULT_PID) =>

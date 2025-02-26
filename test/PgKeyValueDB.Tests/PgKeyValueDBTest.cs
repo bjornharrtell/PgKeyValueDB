@@ -130,6 +130,19 @@ public class PgKeyValueDBTest
     }
 
     [TestMethod]
+    public void RemoveAllExpiredGlobalTest()
+    {
+        var key = nameof(RemoveAllExpiredGlobalTest);
+        var pid = nameof(RemoveAllExpiredGlobalTest);
+        kv.Upsert(key, new Poco { Value = key }, pid);
+        var result = kv.RemoveAllExpiredGlobal();
+        Assert.AreEqual(0, result);
+        kv.Upsert(key, new Poco { Value = key }, pid, DateTimeOffset.UtcNow.AddMinutes(-1));
+        result = kv.RemoveAllExpiredGlobal();
+        Assert.AreEqual(1, result);
+    }
+
+    [TestMethod]
     public void DuplicateKeyTest()
     {
         var key = nameof(DuplicateKeyTest);
