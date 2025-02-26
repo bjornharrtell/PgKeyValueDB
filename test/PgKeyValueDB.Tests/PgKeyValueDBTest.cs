@@ -28,6 +28,7 @@ public class Address
 
 public class UserProfile
 {
+    public string? Id { get; set; } // Add this line
     public string? Name { get; set; }
     public string? DisplayName { get; set; }
     public int Age { get; set; }
@@ -37,6 +38,7 @@ public class UserProfile
     public Address? SecondaryAddress { get; set; }
     public List<string>? Tags { get; set; }
     public bool? IsVerified { get; set; }
+    public List<string>? AdditionalIds { get; set; } // Add this line
 }
 
 public class Poco
@@ -547,5 +549,45 @@ public class PgKeyValueDBTest
 
         Assert.AreEqual(1, vipUsers.Count);
         Assert.AreEqual("Alice", vipUsers[0].Name);
+    }
+
+    [TestMethod]
+    public async Task ComplexExpressionTest()
+    {
+        var key1 = nameof(ComplexExpressionTest) + "1";
+        var key2 = nameof(ComplexExpressionTest) + "2";
+        var pid = nameof(ComplexExpressionTest);
+
+        var user1 = new UserProfile
+        {
+            Id = "user1",
+            Name = "Alice",
+            AdditionalIds = new List<string> { "id1", "id2" }
+        };
+
+        var user2 = new UserProfile
+        {
+            Id = "user2",
+            Name = "Bob",
+            AdditionalIds = new List<string> { "id3", "id4" }
+        };
+
+        await kv.UpsertAsync(key1, user1, pid);
+        await kv.UpsertAsync(key2, user2, pid);
+
+        // Variables for the expression
+        bool notIdIsEmpty = false;
+        string notId = "user3";
+        string idOrAdditionalId = "id1";
+
+        // This query should filter users by the complex expression
+        Expression<Func<UserProfile, bool>> expr = q =>
+            (notIdIsEmpty || q.Id != notId) &&
+            (q.Id == idOrAdditionalId || q.AdditionalIds!.Contains(idOrAdditionalId));
+
+        var users = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        Assert.AreEqual(1, users.Count);
+        Assert.AreEqual("Alice", users[0].Name);
     }
 }
