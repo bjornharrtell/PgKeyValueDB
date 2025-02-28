@@ -26,9 +26,9 @@ public class Address
     public int ZipCode { get; set; }
 }
 
-public class UserProfile
+public class UserProfile : UserProfileBase1
 {
-    public string? Id { get; set; } // Add this line
+    public override string? Id { get; set; } // Add this line
     public string? Name { get; set; }
     public string? DisplayName { get; set; }
     public int Age { get; set; }
@@ -38,7 +38,25 @@ public class UserProfile
     public Address? SecondaryAddress { get; set; }
     public List<string>? Tags { get; set; }
     public bool? IsVerified { get; set; }
-    public List<string>? AdditionalIds { get; set; } // Add this line
+    public override List<string>? AdditionalIds { get; set; } // Add this line
+}
+
+public abstract class UserProfileBase1 : UserProfileBase2, IUserProfileBase1
+{ }
+
+public abstract class UserProfileBase2 : IUserProfileBase2
+{
+    public abstract string? Id { get; set; } // Add this line
+    public virtual List<string>? AdditionalIds { get; set; } // Add this line
+}
+
+public interface IUserProfileBase1 : IUserProfileBase2
+{ }
+
+public interface IUserProfileBase2
+{
+    string? Id { get; set; } // Add this line
+    List<string>? AdditionalIds { get; set; } // Add this line
 }
 
 public class Poco
@@ -589,5 +607,97 @@ public class PgKeyValueDBTest
 
         Assert.AreEqual(1, users.Count);
         Assert.AreEqual("Alice", users[0].Name);
+    }
+
+    [TestMethod]
+    public async Task ComplexExpressionInheritanceTest()
+    {
+        var key1 = nameof(ComplexExpressionTest) + "1";
+        var key2 = nameof(ComplexExpressionTest) + "2";
+        var pid = nameof(ComplexExpressionTest);
+
+        var user1 = new UserProfile
+        {
+            Id = "user1",
+            Name = "Alice",
+            AdditionalIds = new List<string> { "id1", "id2" }
+        };
+
+        var user2 = new UserProfile
+        {
+            Id = "user2",
+            Name = "Bob",
+            AdditionalIds = new List<string> { "id3", "id4" }
+        };
+
+        await kv.UpsertAsync(key1, user1, pid);
+        await kv.UpsertAsync(key2, user2, pid);
+
+        // Variables for the expression
+        bool notIdIsEmpty = false;
+        string notId = "user3";
+        string idOrAdditionalId = "id1";
+
+        // This query should filter users by the complex expression
+        List<UserProfile> users = await QueryByBase<UserProfile>(pid, notIdIsEmpty, notId, idOrAdditionalId);
+
+        Assert.AreEqual(1, users.Count);
+        Assert.AreEqual("Alice", users[0].Name);
+    }
+
+    private static async Task<List<T>> QueryByBase<T>(string pid, bool notIdIsEmpty, string notId, string idOrAdditionalId) where T : UserProfileBase1
+    {
+        Expression<Func<T, bool>> expr = q =>
+            (notIdIsEmpty || q.Id != notId) &&
+            (q.Id == idOrAdditionalId || q.AdditionalIds!.Contains(idOrAdditionalId));
+
+        var users = await kv.GetListAsync(pid, expr).ToListAsync();
+        return users;
+    }
+
+    [TestMethod]
+    public async Task ComplexExpressionInterfaceInheritanceTest()
+    {
+        var key1 = nameof(ComplexExpressionTest) + "1";
+        var key2 = nameof(ComplexExpressionTest) + "2";
+        var pid = nameof(ComplexExpressionTest);
+
+        var user1 = new UserProfile
+        {
+            Id = "user1",
+            Name = "Alice",
+            AdditionalIds = new List<string> { "id1", "id2" }
+        };
+
+        var user2 = new UserProfile
+        {
+            Id = "user2",
+            Name = "Bob",
+            AdditionalIds = new List<string> { "id3", "id4" }
+        };
+
+        await kv.UpsertAsync(key1, user1, pid);
+        await kv.UpsertAsync(key2, user2, pid);
+
+        // Variables for the expression
+        bool notIdIsEmpty = false;
+        string notId = "user3";
+        string idOrAdditionalId = "id1";
+
+        // This query should filter users by the complex expression
+        List<UserProfile> users = await QueryByInterfaceBase<UserProfile>(pid, notIdIsEmpty, notId, idOrAdditionalId);
+
+        Assert.AreEqual(1, users.Count);
+        Assert.AreEqual("Alice", users[0].Name);
+    }
+
+    private static async Task<List<T>> QueryByInterfaceBase<T>(string pid, bool notIdIsEmpty, string notId, string idOrAdditionalId) where T : IUserProfileBase1
+    {
+        Expression<Func<T, bool>> expr = q =>
+            (notIdIsEmpty || q.Id != notId) &&
+            (q.Id == idOrAdditionalId || q.AdditionalIds!.Contains(idOrAdditionalId));
+
+        var users = await kv.GetListAsync(pid, expr).ToListAsync();
+        return users;
     }
 }
