@@ -119,7 +119,7 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
                     }
 
                     Visit(node.Object);
-                    whereClause.Append(isCaseInsensitive ? " ILIKE " : " like ");
+                    whereClause.Append(isCaseInsensitive ? " ilike " : " like ");
 
                     // Get the search value and create pattern parameter
                     var searchValue = Expression.Lambda(node.Arguments[0]).Compile().DynamicInvoke()?.ToString();
@@ -226,7 +226,7 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
         var name = propertyNamingPolicy.ConvertName(member.Name);
         if (parentPath != "value")
         {
-            return $"({parentPath} ->> '{name}'){cast}";
+            return $"({parentPath}->>'{name}'){cast}";
         }
         return $"(value ->> '{name}'){cast}";
     }
@@ -293,6 +293,11 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
                 path.Push(current.Member.Name);
                 break;
             }
+            else if (current.Expression?.NodeType == ExpressionType.Convert)
+            {
+                path.Push(current.Member.Name);
+                break;
+            }
             else if (current.Expression is MemberExpression parent)
             {
                 path.Push(current.Member.Name);
@@ -306,7 +311,7 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
         foreach (var segment in path.Reverse())
         {
             var name = propertyNamingPolicy.ConvertName(segment);
-            jsonPath = $"({jsonPath} -> '{name}')";
+            jsonPath = $"({jsonPath}->'{name}')";
         }
         return jsonPath;
     }
