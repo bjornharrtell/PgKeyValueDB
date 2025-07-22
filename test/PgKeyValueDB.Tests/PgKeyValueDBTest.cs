@@ -700,4 +700,59 @@ public class PgKeyValueDBTest
         var users = await kv.GetListAsync(pid, expr).ToListAsync();
         return users;
     }
+
+    [TestMethod]
+    public async Task FilterByIsNullOrWhiteSpaceTest()
+    {
+        var key1 = nameof(FilterByIsNullOrWhiteSpaceTest) + "1";
+        var key2 = nameof(FilterByIsNullOrWhiteSpaceTest) + "2";
+        var key3 = nameof(FilterByIsNullOrWhiteSpaceTest) + "3";
+        var key4 = nameof(FilterByIsNullOrWhiteSpaceTest) + "4";
+        var pid = nameof(FilterByIsNullOrWhiteSpaceTest);
+
+        var user1 = new UserProfile
+        {
+            Name = "Alice",
+            DisplayName = "Alice Smith"
+        };
+
+        var user2 = new UserProfile
+        {
+            Name = "Bob",
+            DisplayName = null // null value
+        };
+
+        var user3 = new UserProfile
+        {
+            Name = "Charlie",
+            DisplayName = "" // empty string
+        };
+
+        var user4 = new UserProfile
+        {
+            Name = "David",
+            DisplayName = "   " // whitespace only
+        };
+
+        await kv.UpsertAsync(key1, user1, pid);
+        await kv.UpsertAsync(key2, user2, pid);
+        await kv.UpsertAsync(key3, user3, pid);
+        await kv.UpsertAsync(key4, user4, pid);
+
+        // This query should filter users with null, empty, or whitespace-only DisplayName
+        Expression<Func<UserProfile, bool>> expr = u => string.IsNullOrWhiteSpace(u.DisplayName);
+        var usersWithEmptyDisplayName = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        Assert.AreEqual(3, usersWithEmptyDisplayName.Count);
+        Assert.IsTrue(usersWithEmptyDisplayName.Any(u => u.Name == "Bob"));
+        Assert.IsTrue(usersWithEmptyDisplayName.Any(u => u.Name == "Charlie"));
+        Assert.IsTrue(usersWithEmptyDisplayName.Any(u => u.Name == "David"));
+
+        // Test the opposite - users with valid DisplayName
+        Expression<Func<UserProfile, bool>> exprNotEmpty = u => !string.IsNullOrWhiteSpace(u.DisplayName);
+        var usersWithValidDisplayName = await kv.GetListAsync(pid, exprNotEmpty).ToListAsync();
+
+        Assert.AreEqual(1, usersWithValidDisplayName.Count);
+        Assert.AreEqual("Alice", usersWithValidDisplayName[0].Name);
+    }
 }

@@ -174,6 +174,14 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
                     Visit(node.Object);
                     whereClause.Append(")");
                     return node;
+
+                case nameof(string.IsNullOrWhiteSpace):
+                    whereClause.Append("(");
+                    Visit(node.Arguments[0]);
+                    whereClause.Append(" is null or trim(");
+                    Visit(node.Arguments[0]);
+                    whereClause.Append(") = '')");
+                    return node;
             }
         }
 
