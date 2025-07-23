@@ -755,4 +755,50 @@ public class PgKeyValueDBTest
         Assert.AreEqual(1, usersWithValidDisplayName.Count);
         Assert.AreEqual("Alice", usersWithValidDisplayName[0].Name);
     }
+
+    [TestMethod]
+    public async Task FilterByHasValueTest()
+    {
+        var key1 = nameof(FilterByHasValueTest) + "1";
+        var key2 = nameof(FilterByHasValueTest) + "2";
+        var key3 = nameof(FilterByHasValueTest) + "3";
+        var pid = nameof(FilterByHasValueTest);
+
+        var user1 = new UserProfile
+        {
+            Name = "Alice",
+            IsVerified = true
+        };
+
+        var user2 = new UserProfile
+        {
+            Name = "Bob",
+            IsVerified = false
+        };
+
+        var user3 = new UserProfile
+        {
+            Name = "Charlie",
+            IsVerified = null // null value
+        };
+
+        await kv.UpsertAsync(key1, user1, pid);
+        await kv.UpsertAsync(key2, user2, pid);
+        await kv.UpsertAsync(key3, user3, pid);
+
+        // This query should filter users where IsVerified has a value (not null)
+        Expression<Func<UserProfile, bool>> expr = u => u.IsVerified.HasValue;
+        var usersWithVerificationStatus = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        Assert.AreEqual(2, usersWithVerificationStatus.Count);
+        Assert.IsTrue(usersWithVerificationStatus.Any(u => u.Name == "Alice"));
+        Assert.IsTrue(usersWithVerificationStatus.Any(u => u.Name == "Bob"));
+
+        // Test the opposite - users where IsVerified is null
+        Expression<Func<UserProfile, bool>> exprNoValue = u => !u.IsVerified.HasValue;
+        var usersWithoutVerificationStatus = await kv.GetListAsync(pid, exprNoValue).ToListAsync();
+
+        Assert.AreEqual(1, usersWithoutVerificationStatus.Count);
+        Assert.AreEqual("Charlie", usersWithoutVerificationStatus[0].Name);
+    }
 }

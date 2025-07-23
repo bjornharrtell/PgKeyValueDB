@@ -248,6 +248,36 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
 
     protected override Expression VisitMember(MemberExpression node)
     {
+        // Handle HasValue property on nullable types
+        if (node.Member.Name == "HasValue" && node.Expression is MemberExpression nullableMember)
+        {
+            // Check if this is accessing a closure field
+            if (nullableMember.Expression?.NodeType == ExpressionType.Constant)
+            {
+                var value = Expression.Lambda(node).Compile().DynamicInvoke();
+                AddParameter(value, node.Type);
+                return node;
+            }
+
+            // For nullable properties, HasValue means the JSON field is not null
+            if (nullableMember.Expression is MemberExpression nestedMember)
+            {
+                var parentPath = BuildNestedJsonPath(nestedMember);
+                var jsonPath = BuildJsonPath(nullableMember.Member, parentPath);
+                // Remove the cast since we're checking for null
+                var pathWithoutCast = jsonPath.Substring(1, jsonPath.LastIndexOf(')') - 1);
+                whereClause.Append($"({pathWithoutCast}) is not null");
+            }
+            else if (nullableMember.Expression?.NodeType == ExpressionType.Parameter)
+            {
+                var jsonPath = BuildJsonPath(nullableMember.Member);
+                // Remove the cast since we're checking for null
+                var pathWithoutCast = jsonPath.Substring(1, jsonPath.LastIndexOf(')') - 1);
+                whereClause.Append($"({pathWithoutCast}) is not null");
+            }
+            return node;
+        }
+
         // Handle closure/captured variables
         if (node.Expression?.NodeType == ExpressionType.Constant)
         {
