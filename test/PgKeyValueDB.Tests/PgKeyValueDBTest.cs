@@ -35,6 +35,15 @@ public class Address
     public int ZipCode { get; set; }
 }
 
+public class User
+{
+    public string? DataType { get; set; }
+    public string? Email { get; set; }
+    public string? Phone { get; set; }
+    public string? Username { get; set; }
+    public string? UserId { get; set; }
+}
+
 public class UserProfile : UserProfileBase1
 {
     public override string? Id { get; set; } // Add this line
@@ -865,5 +874,100 @@ public class PgKeyValueDBTest
         Expression<Func<UserProfile, bool>> query6 = u => string.IsNullOrWhiteSpace(u.DisplayName);
         var result6 = await kv.GetListAsync(pid, query6).ToListAsync();
         Assert.AreEqual(2, result6.Count, "Static method should find Bob and Charlie (null/empty DisplayName)");
+    }
+
+    [TestMethod]
+    public async Task ComplexConditionalExpressionTest()
+    {
+        var pid = nameof(ComplexConditionalExpressionTest);
+        var key1 = pid + "1";
+        var key2 = pid + "2";
+        var key3 = pid + "3";
+
+        var user1 = new User
+        {
+            DataType = "Employee",
+            Email = "alice@example.com",
+            Phone = "123-456-7890",
+            Username = "alice123",
+            UserId = "user001"
+        };
+
+        var user2 = new User
+        {
+            DataType = "Employee",
+            Email = "bob@example.com",
+            Phone = "987-654-3210",
+            Username = "bobuser",
+            UserId = "user002"
+        };
+
+        var user3 = new User
+        {
+            DataType = "Customer",
+            Email = "charlie@example.com",
+            Phone = "555-123-4567",
+            Username = "charlie_c",
+            UserId = "user003"
+        };
+
+        await kv.UpsertAsync(key1, user1, pid);
+        await kv.UpsertAsync(key2, user2, pid);
+        await kv.UpsertAsync(key3, user3, pid);
+
+        // Test variables matching the upstream pattern
+        bool queryFilters = true;
+        string UserDataType = "Employee";
+        string filterEmail = "alice";
+        string filterPhone = "";
+        string filterUsername = "";
+        string filterUserId = "";
+
+        // This expression mirrors the upstream code that causes the PostgreSQL syntax error
+        Expression<Func<User, bool>> whereQuery = u => !queryFilters ? u.DataType!.Equals(UserDataType) :
+                u.DataType!.Equals(UserDataType) && (
+                    (!string.IsNullOrWhiteSpace(filterEmail) && u.Email!.Contains(filterEmail, StringComparison.CurrentCultureIgnoreCase)) ||
+                    (!string.IsNullOrWhiteSpace(filterPhone) && u.Phone!.Contains(filterPhone, StringComparison.CurrentCultureIgnoreCase)) ||
+                    (!string.IsNullOrWhiteSpace(filterUsername) && u.Username!.Contains(filterUsername, StringComparison.CurrentCultureIgnoreCase)) ||
+                    (!string.IsNullOrWhiteSpace(filterUserId) && u.UserId!.Contains(filterUserId, StringComparison.CurrentCultureIgnoreCase))
+                );
+
+        // This should trigger the PostgreSQL syntax error at position 142
+        var users = await kv.GetListAsync(pid, whereQuery).ToListAsync();
+
+        // If the test passes, we expect to find alice@example.com
+        Assert.AreEqual(1, users.Count);
+        Assert.AreEqual("alice@example.com", users[0].Email);
+    }
+
+    [TestMethod]
+    public async Task SimpleConditionalExpressionTest()
+    {
+        var pid = nameof(SimpleConditionalExpressionTest);
+        var key1 = pid + "1";
+
+        var user1 = new User
+        {
+            DataType = "Employee",
+            Email = "alice@example.com",
+            Phone = "123-456-7890",
+            Username = "alice123",
+            UserId = "user001"
+        };
+
+        await kv.UpsertAsync(key1, user1, pid);
+
+        // Simple conditional expression that should trigger the PostgreSQL syntax error
+        bool useSimpleFilter = false;
+        string targetDataType = "Employee";
+        
+        Expression<Func<User, bool>> simpleConditional = u => useSimpleFilter ? u.DataType!.Equals("Customer") : u.DataType!.Equals(targetDataType);
+
+        // This should also trigger the PostgreSQL syntax error at some position
+        var users = await kv.GetListAsync(pid, simpleConditional).ToListAsync();
+
+        // If the test passes, we expect to find the employee
+        Assert.AreEqual(1, users.Count);
+        Assert.AreEqual("alice@example.com", users[0].Email);
     }
 }

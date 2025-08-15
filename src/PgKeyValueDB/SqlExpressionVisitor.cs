@@ -498,4 +498,18 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
 
         return base.VisitUnary(node);
     }
+
+    protected override Expression VisitConditional(ConditionalExpression node)
+    {
+        // Translate conditional expressions (ternary operator ?: ) to PostgreSQL CASE WHEN syntax
+        // Example: condition ? ifTrue : ifFalse becomes (case when condition then ifTrue else ifFalse end)
+        whereClause.Append("(case when ");
+        Visit(node.Test);
+        whereClause.Append(" then ");
+        Visit(node.IfTrue);
+        whereClause.Append(" else ");
+        Visit(node.IfFalse);
+        whereClause.Append(" end)");
+        return node;
+    }
 }
