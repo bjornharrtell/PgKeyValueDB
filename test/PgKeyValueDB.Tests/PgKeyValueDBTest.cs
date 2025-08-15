@@ -4,6 +4,15 @@ using MysticMind.PostgresEmbed;
 
 namespace Wololo.PgKeyValueDB.Tests;
 
+// Extension method to simulate upstream usage pattern
+public static class StringExtensions
+{
+    public static bool IsNullOrWhiteSpace(this string? value)
+    {
+        return string.IsNullOrWhiteSpace(value);
+    }
+}
+
 public enum UserStatus
 {
     Active,
@@ -31,6 +40,7 @@ public class UserProfile : UserProfileBase1
     public override string? Id { get; set; } // Add this line
     public string? Name { get; set; }
     public string? DisplayName { get; set; }
+    public string? Email { get; set; }
     public int Age { get; set; }
     public UserStatus Status { get; set; }
     public UserRole Role { get; set; }
@@ -800,5 +810,60 @@ public class PgKeyValueDBTest
 
         Assert.AreEqual(1, usersWithoutVerificationStatus.Count);
         Assert.AreEqual("Charlie", usersWithoutVerificationStatus[0].Name);
+    }
+
+    [TestMethod]
+    public async Task FilterWithExtensionMethodIsNullOrWhiteSpaceTest()
+    {
+        var key1 = nameof(FilterWithExtensionMethodIsNullOrWhiteSpaceTest) + "1";
+        var key2 = nameof(FilterWithExtensionMethodIsNullOrWhiteSpaceTest) + "2";
+        var key3 = nameof(FilterWithExtensionMethodIsNullOrWhiteSpaceTest) + "3";
+        var pid = nameof(FilterWithExtensionMethodIsNullOrWhiteSpaceTest);
+
+        var user1 = new UserProfile { Name = "Alice", DisplayName = "Alice Display", Email = "alice@example.com" };
+        var user2 = new UserProfile { Name = "Bob", DisplayName = null, Email = null };
+        var user3 = new UserProfile { Name = "Charlie", DisplayName = "", Email = "" };
+
+        await kv.UpsertAsync(key1, user1, pid);
+        await kv.UpsertAsync(key2, user2, pid);
+        await kv.UpsertAsync(key3, user3, pid);
+
+        // Test extension method with different closure variable values
+        
+        // Test 1: Non-null/non-empty string - should return true
+        string? validEmail = "alice";
+        Expression<Func<UserProfile, bool>> query1 = u => !validEmail.IsNullOrWhiteSpace();
+        var result1 = await kv.GetListAsync(pid, query1).ToListAsync();
+        Assert.AreEqual(3, result1.Count, "!validEmail.IsNullOrWhiteSpace() should return all users");
+
+        // Test 2: Empty string - should return false
+        string? emptyEmail = "";
+        Expression<Func<UserProfile, bool>> query2 = u => !emptyEmail.IsNullOrWhiteSpace();
+        var result2 = await kv.GetListAsync(pid, query2).ToListAsync();
+        Assert.AreEqual(0, result2.Count, "!emptyEmail.IsNullOrWhiteSpace() should return no users");
+
+        // Test 3: Null string - should return false
+        string? nullEmail = null;
+        Expression<Func<UserProfile, bool>> query3 = u => !nullEmail.IsNullOrWhiteSpace();
+        var result3 = await kv.GetListAsync(pid, query3).ToListAsync();
+        Assert.AreEqual(0, result3.Count, "!nullEmail.IsNullOrWhiteSpace() should return no users");
+
+        // Test 4: Whitespace string - should return false
+        string? whitespaceEmail = "   ";
+        Expression<Func<UserProfile, bool>> query4 = u => !whitespaceEmail.IsNullOrWhiteSpace();
+        var result4 = await kv.GetListAsync(pid, query4).ToListAsync();
+        Assert.AreEqual(0, result4.Count, "!whitespaceEmail.IsNullOrWhiteSpace() should return no users");
+
+        // Test 5: Complex expression combining extension method with property checks
+        Expression<Func<UserProfile, bool>> query5 = u => 
+            !validEmail.IsNullOrWhiteSpace() && u.Name == "Alice";
+        var result5 = await kv.GetListAsync(pid, query5).ToListAsync();
+        Assert.AreEqual(1, result5.Count, "Combined expression should find Alice");
+        Assert.AreEqual("Alice", result5[0].Name);
+
+        // Test 6: Verify the static method version still works
+        Expression<Func<UserProfile, bool>> query6 = u => string.IsNullOrWhiteSpace(u.DisplayName);
+        var result6 = await kv.GetListAsync(pid, query6).ToListAsync();
+        Assert.AreEqual(2, result6.Count, "Static method should find Bob and Charlie (null/empty DisplayName)");
     }
 }

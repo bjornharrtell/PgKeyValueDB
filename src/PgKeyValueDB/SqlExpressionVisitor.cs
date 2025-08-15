@@ -83,6 +83,38 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
 
     protected override Expression VisitMethodCall(MethodCallExpression node)
     {
+        // Handle IsNullOrWhiteSpace extension method calls
+        if (node.Method.Name == nameof(string.IsNullOrWhiteSpace) && 
+            node.Method.IsStatic && 
+            node.Arguments.Count == 1 &&
+            node.Arguments[0].Type == typeof(string))
+        {
+            var argument = node.Arguments[0];
+            
+            // Check if it's a constant/closure variable (not a property access on the entity)
+            if (argument.NodeType == ExpressionType.Constant || 
+                (argument.NodeType == ExpressionType.MemberAccess && 
+                 ((MemberExpression)argument).Expression?.NodeType == ExpressionType.Constant))
+            {
+                // For constants/variables, evaluate the IsNullOrWhiteSpace call and use the result
+                var value = Expression.Lambda(argument).Compile().DynamicInvoke();
+                var isNullOrWhiteSpace = string.IsNullOrWhiteSpace(value?.ToString());
+                AddParameter(isNullOrWhiteSpace, typeof(bool));
+                return node;
+            }
+            else
+            {
+                // For property access on the entity, generate the JSON path check
+                // This handles cases like string.IsNullOrWhiteSpace(u.SomeProperty)
+                whereClause.Append("(");
+                Visit(argument);
+                whereClause.Append(" is null or trim(");
+                Visit(argument);
+                whereClause.Append(") = '')");
+                return node;
+            }
+        }
+
         // Special handling for enum ToString()
         if (node.Method.Name == nameof(ToString) && node.Object?.Type.IsEnum == true)
         {
