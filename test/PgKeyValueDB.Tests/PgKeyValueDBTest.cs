@@ -2,6 +2,8 @@ using System.Linq.Expressions;
 using Microsoft.Extensions.DependencyInjection;
 using MysticMind.PostgresEmbed;
 
+[assembly: Parallelize]
+
 namespace Wololo.PgKeyValueDB.Tests;
 
 // Extension method to simulate upstream usage pattern
@@ -207,10 +209,10 @@ public class PgKeyValueDBTest
         var key1 = nameof(GetListTest) + "1";
         var key2 = nameof(GetListTest) + "2";
         var pid = nameof(GetListTest);
-        kv.Upsert(key1, new Poco { Value = key1 }, pid);
-        kv.Upsert(key2, new Poco { Value = key2 }, pid);
+        await kv.UpsertAsync(key1, new Poco { Value = key1 }, pid);
+        await kv.UpsertAsync(key2, new Poco { Value = key2 }, pid);
         var list1 = await kv.GetListAsync<Poco>(pid).ToListAsync();
-        Assert.AreEqual(2, list1.Count);
+        Assert.HasCount(2, list1);
     }
 
     [TestMethod]
@@ -221,15 +223,15 @@ public class PgKeyValueDBTest
         var key3 = nameof(GetListOffsetTest) + "3";
         var key4 = nameof(GetListOffsetTest) + "4";
         var pid = nameof(GetListOffsetTest);
-        kv.Upsert(key1, new Poco { Value = key1 }, pid);
-        kv.Upsert(key2, new Poco { Value = key2 }, pid);
-        kv.Upsert(key3, new Poco { Value = key3 }, pid);
-        kv.Upsert(key4, new Poco { Value = key4 }, pid);
+        await kv.UpsertAsync(key1, new Poco { Value = key1 }, pid);
+        await kv.UpsertAsync(key2, new Poco { Value = key2 }, pid);
+        await kv.UpsertAsync(key3, new Poco { Value = key3 }, pid);
+        await kv.UpsertAsync(key4, new Poco { Value = key4 }, pid);
         var list1 = await kv.GetListAsync<Poco>(pid, null, 2, 1).ToListAsync();
-        Assert.AreEqual(2, list1.Count);
+        Assert.HasCount(2, list1);
         Assert.AreEqual(nameof(GetListOffsetTest) + "2", list1[0].Value);
         var list2 = await kv.GetListAsync<Poco>(pid, null, 2, 3).ToListAsync();
-        Assert.AreEqual(1, list2.Count);
+        Assert.HasCount(1, list2);
         Assert.AreEqual(nameof(GetListOffsetTest) + "4", list2[0].Value);
     }
 
@@ -239,10 +241,10 @@ public class PgKeyValueDBTest
         var key1 = nameof(GetListFilterTest) + "1";
         var key2 = nameof(GetListFilterTest) + "2";
         var pid = nameof(GetListFilterTest);
-        kv.Upsert(key1, new Poco { Value = key1 }, pid);
-        kv.Upsert(key2, new Poco { Value = key2 }, pid);
+        await kv.UpsertAsync(key1, new Poco { Value = key1 }, pid);
+        await kv.UpsertAsync(key2, new Poco { Value = key2 }, pid);
         var list1 = await kv.GetListAsync<Poco>(pid, p => p.Value == nameof(GetListFilterTest) + "2").ToListAsync();
-        Assert.AreEqual(1, list1.Count);
+        Assert.HasCount(1, list1);
     }
 
     [TestMethod]
@@ -251,10 +253,10 @@ public class PgKeyValueDBTest
         var key1 = nameof(GetListFilterStartsWithTest) + "1";
         var key2 = nameof(GetListFilterStartsWithTest) + "2";
         var pid = nameof(GetListFilterStartsWithTest);
-        kv.Upsert(key1, new Poco { Value = key1 }, pid);
-        kv.Upsert(key2, new Poco { Value = key2 }, pid);
+        await kv.UpsertAsync(key1, new Poco { Value = key1 }, pid);
+        await kv.UpsertAsync(key2, new Poco { Value = key2 }, pid);
         var list1 = await kv.GetListAsync<Poco>(pid, p => p.Value!.StartsWith(nameof(GetListFilterStartsWithTest))).ToListAsync();
-        Assert.AreEqual(2, list1.Count);
+        Assert.HasCount(2, list1);
     }
 
     [TestMethod]
@@ -263,10 +265,10 @@ public class PgKeyValueDBTest
         var key1 = nameof(GetListFilterContainsTest) + "1";
         var key2 = nameof(GetListFilterContainsTest) + "2";
         var pid = nameof(GetListFilterContainsTest);
-        kv.Upsert(key1, new Poco { Value = key1 }, pid);
-        kv.Upsert(key2, new Poco { Value = key2 }, pid);
+        await kv.UpsertAsync(key1, new Poco { Value = key1 }, pid);
+        await kv.UpsertAsync(key2, new Poco { Value = key2 }, pid);
         var list1 = await kv.GetListAsync<Poco>(pid, p => p.Value!.Contains(nameof(GetListFilterContainsTest))).ToListAsync();
-        Assert.AreEqual(2, list1.Count);
+        Assert.HasCount(2, list1);
     }
 
     [TestMethod]
@@ -346,10 +348,10 @@ public class PgKeyValueDBTest
         await kv.UpsertAsync(key1, new Poco { Value = key1 }, pid);
         await kv.UpsertAsync(key2, new Poco { Value = key2 }, pid);
         var list1 = await kv.GetListAsync<Poco>(pid, p => p.Value!.Equals(key1)).ToListAsync();
-        Assert.AreEqual(1, list1.Count);
+        Assert.HasCount(1, list1);
         Assert.AreEqual(key1, list1[0].Value);
         var list2 = await kv.GetListAsync<Poco>(pid, p => string.Equals(p.Value, key2)).ToListAsync();
-        Assert.AreEqual(1, list2.Count);
+        Assert.HasCount(1, list2);
         Assert.AreEqual(key2, list2[0].Value);
     }
 
@@ -366,7 +368,7 @@ public class PgKeyValueDBTest
         };
         await kv.UpsertAsync(key, testUser, pid);
         var activeUsers = await kv.GetListAsync<UserProfile>(pid, u => u.Status == UserStatus.Active).ToListAsync();
-        Assert.AreEqual(1, activeUsers.Count);
+        Assert.HasCount(1, activeUsers);
         Assert.AreEqual("John Doe", activeUsers[0].Name);
     }
 
@@ -386,7 +388,7 @@ public class PgKeyValueDBTest
         };
         await kv.UpsertAsync(key, testUser, pid);
         var nyUsers = await kv.GetListAsync<UserProfile>(pid, u => u.PrimaryAddress!.City == "New York").ToListAsync();
-        Assert.AreEqual(1, nyUsers.Count);
+        Assert.HasCount(1, nyUsers);
         Assert.AreEqual("John Doe", nyUsers[0].Name);
     }
 
@@ -403,7 +405,7 @@ public class PgKeyValueDBTest
         };
         await kv.UpsertAsync(key, testUser, pid);
         var olderUsers = await kv.GetListAsync<UserProfile>(pid, u => u.Age > AGE_THRESHOLD).ToListAsync();
-        Assert.AreEqual(1, olderUsers.Count);
+        Assert.HasCount(1, olderUsers);
     }
 
     [TestMethod]
@@ -426,7 +428,7 @@ public class PgKeyValueDBTest
             u.PrimaryAddress!.Country == "USA" &&
             u.SecondaryAddress!.City == "Boston";
         var verifiedAdmins = await kv.GetListAsync(pid, expr).ToListAsync();
-        Assert.AreEqual(1, verifiedAdmins.Count);
+        Assert.HasCount(1, verifiedAdmins);
     }
 
     [TestMethod]
@@ -444,12 +446,12 @@ public class PgKeyValueDBTest
         };
         await kv.UpsertAsync(key, testUser, pid);
         Expression<Func<UserProfile, bool>> expr = u =>
-            !(u.IsVerified == false) &&
+            u.IsVerified != false &&
             u.Role == UserRole.Admin &&
             u.PrimaryAddress!.Country == "USA" &&
             u.SecondaryAddress!.City == "Boston";
         var verifiedAdmins = await kv.GetListAsync(pid, expr).ToListAsync();
-        Assert.AreEqual(1, verifiedAdmins.Count);
+        Assert.HasCount(1, verifiedAdmins);
     }
 
     [TestMethod]
@@ -476,7 +478,7 @@ public class PgKeyValueDBTest
             u.PrimaryAddress.City != "San Francisco" &&
             (u.SecondaryAddress == null || u.SecondaryAddress.City == "Boston");
         var users = await kv.GetListAsync(pid, expr).ToListAsync();
-        Assert.AreEqual(1, users.Count);
+        Assert.HasCount(1, users);
     }
 
     [TestMethod]
@@ -496,7 +498,7 @@ public class PgKeyValueDBTest
             u.Status.ToString() == "Active" &&
             u.Role.ToString() == "Admin";
         var activeAdmins = await kv.GetListAsync(pid, expr).ToListAsync();
-        Assert.AreEqual(1, activeAdmins.Count);
+        Assert.HasCount(1, activeAdmins);
     }
 
     [TestMethod]
@@ -520,7 +522,7 @@ public class PgKeyValueDBTest
             u.PrimaryAddress!.Country == COUNTRY &&
             u.PrimaryAddress.ZipCode > ZIP_THRESHOLD;
         var westCoastUsers = await kv.GetListAsync(pid, expr).ToListAsync();
-        Assert.AreEqual(1, westCoastUsers.Count);
+        Assert.HasCount(1, westCoastUsers);
     }
 
     [TestMethod]
@@ -553,7 +555,7 @@ public class PgKeyValueDBTest
             (p.Name!.Contains(filterText, StringComparison.OrdinalIgnoreCase) ||
              p.DisplayName!.Contains(filterText, StringComparison.OrdinalIgnoreCase));
         var results = await kv.GetListAsync(pid, expr).ToListAsync();
-        Assert.AreEqual(2, results.Count); // Should match both John Smith and Johnny
+        Assert.HasCount(2, results); // Should match both John Smith and Johnny
         Assert.IsTrue(results.Any(u => u.Name == "John Smith"));
         Assert.IsTrue(results.Any(u => u.DisplayName == "Johnny"));
     }
@@ -568,13 +570,13 @@ public class PgKeyValueDBTest
         var user1 = new UserProfile
         {
             Name = "Alice",
-            Tags = new List<string> { "vip", "early-adopter" }
+            Tags = ["vip", "early-adopter"]
         };
 
         var user2 = new UserProfile
         {
             Name = "Bob",
-            Tags = new List<string> { "regular", "new-user" }
+            Tags = ["regular", "new-user"]
         };
 
         await kv.UpsertAsync(key1, user1, pid);
@@ -584,7 +586,7 @@ public class PgKeyValueDBTest
         Expression<Func<UserProfile, bool>> expr = u => u.Tags!.Contains("vip");
         var vipUsers = await kv.GetListAsync(pid, expr).ToListAsync();
 
-        Assert.AreEqual(1, vipUsers.Count);
+        Assert.HasCount(1, vipUsers);
         Assert.AreEqual("Alice", vipUsers[0].Name);
     }
 
@@ -599,14 +601,14 @@ public class PgKeyValueDBTest
         {
             Id = "user1",
             Name = "Alice",
-            AdditionalIds = new List<string> { "id1", "id2" }
+            AdditionalIds = ["id1", "id2"]
         };
 
         var user2 = new UserProfile
         {
             Id = "user2",
             Name = "Bob",
-            AdditionalIds = new List<string> { "id3", "id4" }
+            AdditionalIds = ["id3", "id4"]
         };
 
         await kv.UpsertAsync(key1, user1, pid);
@@ -624,7 +626,7 @@ public class PgKeyValueDBTest
 
         var users = await kv.GetListAsync(pid, expr).ToListAsync();
 
-        Assert.AreEqual(1, users.Count);
+        Assert.HasCount(1, users);
         Assert.AreEqual("Alice", users[0].Name);
     }
 
@@ -639,14 +641,14 @@ public class PgKeyValueDBTest
         {
             Id = "user1",
             Name = "Alice",
-            AdditionalIds = new List<string> { "id1", "id2" }
+            AdditionalIds = ["id1", "id2"]
         };
 
         var user2 = new UserProfile
         {
             Id = "user2",
             Name = "Bob",
-            AdditionalIds = new List<string> { "id3", "id4" }
+            AdditionalIds = ["id3", "id4"]
         };
 
         await kv.UpsertAsync(key1, user1, pid);
@@ -660,7 +662,7 @@ public class PgKeyValueDBTest
         // This query should filter users by the complex expression
         List<UserProfile> users = await QueryByBase<UserProfile>(pid, notIdIsEmpty, notId, idOrAdditionalId);
 
-        Assert.AreEqual(1, users.Count);
+        Assert.HasCount(1, users);
         Assert.AreEqual("Alice", users[0].Name);
     }
 
@@ -685,14 +687,14 @@ public class PgKeyValueDBTest
         {
             Id = "user1",
             Name = "Alice",
-            AdditionalIds = new List<string> { "id1", "id2" }
+            AdditionalIds = ["id1", "id2"]
         };
 
         var user2 = new UserProfile
         {
             Id = "user2",
             Name = "Bob",
-            AdditionalIds = new List<string> { "id3", "id4" }
+            AdditionalIds = ["id3", "id4"]
         };
 
         await kv.UpsertAsync(key1, user1, pid);
@@ -706,7 +708,7 @@ public class PgKeyValueDBTest
         // This query should filter users by the complex expression
         List<UserProfile> users = await QueryByInterfaceBase<UserProfile>(pid, notIdIsEmpty, notId, idOrAdditionalId);
 
-        Assert.AreEqual(1, users.Count);
+        Assert.HasCount(1, users);
         Assert.AreEqual("Alice", users[0].Name);
     }
 
@@ -762,7 +764,7 @@ public class PgKeyValueDBTest
         Expression<Func<UserProfile, bool>> expr = u => string.IsNullOrWhiteSpace(u.DisplayName);
         var usersWithEmptyDisplayName = await kv.GetListAsync(pid, expr).ToListAsync();
 
-        Assert.AreEqual(3, usersWithEmptyDisplayName.Count);
+        Assert.HasCount(3, usersWithEmptyDisplayName);
         Assert.IsTrue(usersWithEmptyDisplayName.Any(u => u.Name == "Bob"));
         Assert.IsTrue(usersWithEmptyDisplayName.Any(u => u.Name == "Charlie"));
         Assert.IsTrue(usersWithEmptyDisplayName.Any(u => u.Name == "David"));
@@ -771,7 +773,7 @@ public class PgKeyValueDBTest
         Expression<Func<UserProfile, bool>> exprNotEmpty = u => !string.IsNullOrWhiteSpace(u.DisplayName);
         var usersWithValidDisplayName = await kv.GetListAsync(pid, exprNotEmpty).ToListAsync();
 
-        Assert.AreEqual(1, usersWithValidDisplayName.Count);
+        Assert.HasCount(1, usersWithValidDisplayName);
         Assert.AreEqual("Alice", usersWithValidDisplayName[0].Name);
     }
 
@@ -809,7 +811,7 @@ public class PgKeyValueDBTest
         Expression<Func<UserProfile, bool>> expr = u => u.IsVerified.HasValue;
         var usersWithVerificationStatus = await kv.GetListAsync(pid, expr).ToListAsync();
 
-        Assert.AreEqual(2, usersWithVerificationStatus.Count);
+        Assert.HasCount(2, usersWithVerificationStatus);
         Assert.IsTrue(usersWithVerificationStatus.Any(u => u.Name == "Alice"));
         Assert.IsTrue(usersWithVerificationStatus.Any(u => u.Name == "Bob"));
 
@@ -817,7 +819,7 @@ public class PgKeyValueDBTest
         Expression<Func<UserProfile, bool>> exprNoValue = u => !u.IsVerified.HasValue;
         var usersWithoutVerificationStatus = await kv.GetListAsync(pid, exprNoValue).ToListAsync();
 
-        Assert.AreEqual(1, usersWithoutVerificationStatus.Count);
+        Assert.HasCount(1, usersWithoutVerificationStatus);
         Assert.AreEqual("Charlie", usersWithoutVerificationStatus[0].Name);
     }
 
@@ -838,42 +840,42 @@ public class PgKeyValueDBTest
         await kv.UpsertAsync(key3, user3, pid);
 
         // Test extension method with different closure variable values
-        
+
         // Test 1: Non-null/non-empty string - should return true
         string? validEmail = "alice";
         Expression<Func<UserProfile, bool>> query1 = u => !validEmail.IsNullOrWhiteSpace();
         var result1 = await kv.GetListAsync(pid, query1).ToListAsync();
-        Assert.AreEqual(3, result1.Count, "!validEmail.IsNullOrWhiteSpace() should return all users");
+        Assert.HasCount(3, result1, "!validEmail.IsNullOrWhiteSpace() should return all users");
 
         // Test 2: Empty string - should return false
         string? emptyEmail = "";
         Expression<Func<UserProfile, bool>> query2 = u => !emptyEmail.IsNullOrWhiteSpace();
         var result2 = await kv.GetListAsync(pid, query2).ToListAsync();
-        Assert.AreEqual(0, result2.Count, "!emptyEmail.IsNullOrWhiteSpace() should return no users");
+        Assert.IsEmpty(result2, "!emptyEmail.IsNullOrWhiteSpace() should return no users");
 
         // Test 3: Null string - should return false
         string? nullEmail = null;
         Expression<Func<UserProfile, bool>> query3 = u => !nullEmail.IsNullOrWhiteSpace();
         var result3 = await kv.GetListAsync(pid, query3).ToListAsync();
-        Assert.AreEqual(0, result3.Count, "!nullEmail.IsNullOrWhiteSpace() should return no users");
+        Assert.IsEmpty(result3, "!nullEmail.IsNullOrWhiteSpace() should return no users");
 
         // Test 4: Whitespace string - should return false
         string? whitespaceEmail = "   ";
         Expression<Func<UserProfile, bool>> query4 = u => !whitespaceEmail.IsNullOrWhiteSpace();
         var result4 = await kv.GetListAsync(pid, query4).ToListAsync();
-        Assert.AreEqual(0, result4.Count, "!whitespaceEmail.IsNullOrWhiteSpace() should return no users");
+        Assert.IsEmpty(result4, "!whitespaceEmail.IsNullOrWhiteSpace() should return no users");
 
         // Test 5: Complex expression combining extension method with property checks
-        Expression<Func<UserProfile, bool>> query5 = u => 
+        Expression<Func<UserProfile, bool>> query5 = u =>
             !validEmail.IsNullOrWhiteSpace() && u.Name == "Alice";
         var result5 = await kv.GetListAsync(pid, query5).ToListAsync();
-        Assert.AreEqual(1, result5.Count, "Combined expression should find Alice");
+        Assert.HasCount(1, result5, "Combined expression should find Alice");
         Assert.AreEqual("Alice", result5[0].Name);
 
         // Test 6: Verify the static method version still works
         Expression<Func<UserProfile, bool>> query6 = u => string.IsNullOrWhiteSpace(u.DisplayName);
         var result6 = await kv.GetListAsync(pid, query6).ToListAsync();
-        Assert.AreEqual(2, result6.Count, "Static method should find Bob and Charlie (null/empty DisplayName)");
+        Assert.HasCount(2, result6, "Static method should find Bob and Charlie (null/empty DisplayName)");
     }
 
     [TestMethod]
@@ -936,7 +938,7 @@ public class PgKeyValueDBTest
         var users = await kv.GetListAsync(pid, whereQuery).ToListAsync();
 
         // If the test passes, we expect to find alice@example.com
-        Assert.AreEqual(1, users.Count);
+        Assert.HasCount(1, users);
         Assert.AreEqual("alice@example.com", users[0].Email);
     }
 
@@ -960,14 +962,14 @@ public class PgKeyValueDBTest
         // Simple conditional expression that should trigger the PostgreSQL syntax error
         bool useSimpleFilter = false;
         string targetDataType = "Employee";
-        
+
         Expression<Func<User, bool>> simpleConditional = u => useSimpleFilter ? u.DataType!.Equals("Customer") : u.DataType!.Equals(targetDataType);
 
         // This should also trigger the PostgreSQL syntax error at some position
         var users = await kv.GetListAsync(pid, simpleConditional).ToListAsync();
 
         // If the test passes, we expect to find the employee
-        Assert.AreEqual(1, users.Count);
+        Assert.HasCount(1, users);
         Assert.AreEqual("alice@example.com", users[0].Email);
     }
 }

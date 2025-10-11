@@ -2,7 +2,7 @@
 using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
-using Ctx = NpgsqlDataSourceExtensions.NpgsqlCommandContext;
+using Ctx = Wololo.PgKeyValueDB.NpgsqlDataSourceExtensions.NpgsqlCommandContext;
 
 namespace Wololo.PgKeyValueDB;
 
@@ -20,7 +20,7 @@ public class PgKeyValueDB
         this.dataSource = dataSource;
         this.schemaName = schemaName;
         this.tableName = tableName;
-        this.tableRef = $"{schemaName}.{tableName}";
+        tableRef = $"{schemaName}.{tableName}";
         JsonSerializerOptions = jsonSerializerOptions;
         Init();
     }
@@ -42,7 +42,7 @@ public class PgKeyValueDB
         dataSource.Execute(new Ctx($"create index if not exists idx_{schemaName}_{tableName}_expires on {tableRef} (expires) where expires is not null", Prepare: false));
     }
 
-    static IEnumerable<NpgsqlParameter> CreateParams(string pid, string? id = null)
+    static List<NpgsqlParameter> CreateParams(string pid, string? id = null)
     {
         var baseParams = new List<NpgsqlParameter> { new() { ParameterName = "pid", Value = pid } };
         if (id != null)
@@ -50,7 +50,7 @@ public class PgKeyValueDB
         return baseParams;
     }
 
-    static IEnumerable<NpgsqlParameter> CreateParams<T>(string pid, string? id, T? value, DateTimeOffset? expires)
+    static List<NpgsqlParameter> CreateParams<T>(string pid, string? id, T? value, DateTimeOffset? expires)
     {
         var baseParams = new List<NpgsqlParameter> { new() { ParameterName = "pid", Value = pid } };
         if (id != null)
@@ -76,52 +76,52 @@ public class PgKeyValueDB
 
     public bool Create<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null) =>
         dataSource.Execute(new Ctx(CreateCreateSql, CreateParams(pid, id, value, expires))) > 0;
-    public async Task<bool> CreateAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null) =>
-        await dataSource.ExecuteAsync(new Ctx(CreateCreateSql, CreateParams(pid, id, value, expires))) > 0;
+    public async Task<bool> CreateAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null, CancellationToken token = default) =>
+        await dataSource.ExecuteAsync(new Ctx(CreateCreateSql, CreateParams(pid, id, value, expires)), token) > 0;
     public bool Update<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null) =>
         dataSource.Execute(new Ctx(UpdateSql, CreateParams(pid, id, value, expires))) > 0;
-    public async Task<bool> UpdateAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null) =>
-        await dataSource.ExecuteAsync(new Ctx(UpdateSql, CreateParams(pid, id, value, expires))) > 0;
+    public async Task<bool> UpdateAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null, CancellationToken token = default) =>
+        await dataSource.ExecuteAsync(new Ctx(UpdateSql, CreateParams(pid, id, value, expires)), token) > 0;
     public bool Upsert<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null) =>
         dataSource.Execute(new Ctx(UpsertSql, CreateParams(pid, id, value, expires))) > 0;
-    public async Task<bool> UpsertAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null) =>
-        await dataSource.ExecuteAsync(new Ctx(UpsertSql, CreateParams(pid, id, value, expires))) > 0;
+    public async Task<bool> UpsertAsync<T>(string id, T value, string pid = DEFAULT_PID, DateTimeOffset? expires = null, CancellationToken token = default) =>
+        await dataSource.ExecuteAsync(new Ctx(UpsertSql, CreateParams(pid, id, value, expires)), token) > 0;
     public bool Remove(string id, string pid = DEFAULT_PID) =>
         dataSource.Execute(new Ctx(DeleteSql, CreateParams(pid, id))) > 0;
-    public async Task<bool> RemoveAsync(string id, string pid = DEFAULT_PID) =>
-        await dataSource.ExecuteAsync(new Ctx(DeleteSql, CreateParams(pid, id))) > 0;
+    public async Task<bool> RemoveAsync(string id, string pid = DEFAULT_PID, CancellationToken token = default) =>
+        await dataSource.ExecuteAsync(new Ctx(DeleteSql, CreateParams(pid, id)), token) > 0;
     public int RemoveAll(string pid = DEFAULT_PID) =>
         dataSource.Execute(new Ctx(DeleteAllSql, CreateParams(pid)));
     public int RemoveAll<T>(string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null) =>
         dataSource.Execute(BuildCommandParams(DeleteAllSql, pid, where));
-    public async Task<int> RemoveAllAsync(string pid = DEFAULT_PID) =>
-        await dataSource.ExecuteAsync(new Ctx(DeleteAllSql, CreateParams(pid)));
-    public async Task<int> RemoveAllAsync<T>(string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null) =>
-        await dataSource.ExecuteAsync(BuildCommandParams(DeleteAllSql, pid, where));
+    public async Task<int> RemoveAllAsync(string pid = DEFAULT_PID, CancellationToken token = default) =>
+        await dataSource.ExecuteAsync(new Ctx(DeleteAllSql, CreateParams(pid)), token);
+    public async Task<int> RemoveAllAsync<T>(string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null, CancellationToken token = default) =>
+        await dataSource.ExecuteAsync(BuildCommandParams(DeleteAllSql, pid, where), token);
     public int RemoveAllExpired(string pid = DEFAULT_PID) =>
         dataSource.Execute(new Ctx(DeleteAllExpiredSql, CreateParams(pid)));
-    public async Task<int> RemoveAllExpiredAsync(string pid = DEFAULT_PID) =>
-        await dataSource.ExecuteAsync(new Ctx(DeleteAllExpiredSql, CreateParams(pid)));
+    public async Task<int> RemoveAllExpiredAsync(string pid = DEFAULT_PID, CancellationToken token = default) =>
+        await dataSource.ExecuteAsync(new Ctx(DeleteAllExpiredSql, CreateParams(pid)), token);
     public int RemoveAllExpiredGlobal() =>
         dataSource.Execute(new Ctx(DeleteAllExpiredGlobalSql));
-    public async Task<int> RemoveAllExpiredGlobalAsync() =>
-        await dataSource.ExecuteAsync(new Ctx(DeleteAllExpiredGlobalSql));
+    public async Task<int> RemoveAllExpiredGlobalAsync(CancellationToken token = default) =>
+        await dataSource.ExecuteAsync(new Ctx(DeleteAllExpiredGlobalSql), token);
     public T? Get<T>(string id, string pid = DEFAULT_PID) =>
         dataSource.Execute<T>(new Ctx(SelectSql, CreateParams(pid, id)));
-    public async Task<T?> GetAsync<T>(string id, string pid = DEFAULT_PID) =>
-        await dataSource.ExecuteAsync<T>(new Ctx(SelectSql, CreateParams(pid, id)));
+    public async Task<T?> GetAsync<T>(string id, string pid = DEFAULT_PID, CancellationToken token = default) =>
+        await dataSource.ExecuteAsync<T>(new Ctx(SelectSql, CreateParams(pid, id)), token);
     public bool Exists(string id, string pid = DEFAULT_PID) =>
         dataSource.Execute<bool>(new Ctx(ExistsSql, CreateParams(pid, id)));
-    public async Task<bool> ExistsAsync(string id, string pid = DEFAULT_PID) =>
-        await dataSource.ExecuteAsync<bool>(new Ctx(ExistsSql, CreateParams(pid, id)));
+    public async Task<bool> ExistsAsync(string id, string pid = DEFAULT_PID, CancellationToken token = default) =>
+        await dataSource.ExecuteAsync<bool>(new Ctx(ExistsSql, CreateParams(pid, id)), token);
     public long Count(string pid = DEFAULT_PID) =>
         dataSource.Execute<long>(new Ctx(CountSql, CreateParams(pid)));
     public long Count<T>(string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null) =>
         dataSource.Execute<long>(BuildCommandParams(CountSql, pid, where));
-    public async Task<long> CountAsync(string pid = DEFAULT_PID) =>
-        await dataSource.ExecuteAsync<long>(new Ctx(CountSql, CreateParams(pid)));
-    public async Task<long> CountAsync<T>(string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null) =>
-        await dataSource.ExecuteAsync<long>(BuildCommandParams(CountSql, pid, where));
+    public async Task<long> CountAsync(string pid = DEFAULT_PID, CancellationToken token = default) =>
+        await dataSource.ExecuteAsync<long>(new Ctx(CountSql, CreateParams(pid)), token);
+    public async Task<long> CountAsync<T>(string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null, CancellationToken token = default) =>
+        await dataSource.ExecuteAsync<long>(BuildCommandParams(CountSql, pid, where), token);
 
     private Ctx BuildCommandParams<T>(string sql, string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null)
     {
@@ -136,7 +136,7 @@ public class PgKeyValueDB
         return new Ctx(sql, baseParams);
     }
 
-    public IAsyncEnumerable<T> GetListAsync<T>(string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null, long? limit = null, long? offset = null)
+    public IAsyncEnumerable<T> GetListAsync<T>(string pid = DEFAULT_PID, Expression<Func<T, bool>>? where = null, long? limit = null, long? offset = null, CancellationToken token = default)
     {
         var sql = $"select value from {tableRef} where pid = @pid and (expires is null or now() < expires)";
         var baseParams = new List<NpgsqlParameter>
@@ -156,6 +156,6 @@ public class PgKeyValueDB
         {
             sql += " limit @limit offset @offset";
         }
-        return dataSource.ExecuteListAsync<T>(new Ctx(sql, baseParams));
+        return dataSource.ExecuteListAsync<T>(new Ctx(sql, baseParams), token);
     }
 }

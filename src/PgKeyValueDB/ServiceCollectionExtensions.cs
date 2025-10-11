@@ -1,9 +1,9 @@
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
-using Wololo.PgKeyValueDB;
 
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Wololo.PgKeyValueDB;
 
 public static class NpgsqlServiceCollectionExtensions
 {

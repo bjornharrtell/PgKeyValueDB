@@ -17,7 +17,7 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
     private readonly JsonNamingPolicy propertyNamingPolicy = jsonSerializerOptions.PropertyNamingPolicy ?? JsonNamingPolicy.CamelCase;
 
     public string WhereClause => whereClause.ToString();
-    public NpgsqlParameter[] Parameters => parameters.ToArray();
+    public NpgsqlParameter[] Parameters => [.. parameters];
 
     protected override Expression VisitBinary(BinaryExpression node)
     {
@@ -59,15 +59,6 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
                type == typeof(double) || type == typeof(float) || type == typeof(short);
     }
 
-    private static string GetCommonNumericType(Type type1, Type type2)
-    {
-        if (type1 == typeof(decimal) || type2 == typeof(decimal)) return "numeric";
-        if (type1 == typeof(double) || type2 == typeof(double)) return "double precision";
-        if (type1 == typeof(float) || type2 == typeof(float)) return "real";
-        if (type1 == typeof(long) || type2 == typeof(long)) return "bigint";
-        return "integer";
-    }
-
     private static string GetOperator(ExpressionType nodeType) => nodeType switch
     {
         ExpressionType.Equal => " = ",
@@ -84,16 +75,16 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
     protected override Expression VisitMethodCall(MethodCallExpression node)
     {
         // Handle IsNullOrWhiteSpace extension method calls
-        if (node.Method.Name == nameof(string.IsNullOrWhiteSpace) && 
-            node.Method.IsStatic && 
+        if (node.Method.Name == nameof(string.IsNullOrWhiteSpace) &&
+            node.Method.IsStatic &&
             node.Arguments.Count == 1 &&
             node.Arguments[0].Type == typeof(string))
         {
             var argument = node.Arguments[0];
-            
+
             // Check if it's a constant/closure variable (not a property access on the entity)
-            if (argument.NodeType == ExpressionType.Constant || 
-                (argument.NodeType == ExpressionType.MemberAccess && 
+            if (argument.NodeType == ExpressionType.Constant ||
+                (argument.NodeType == ExpressionType.MemberAccess &&
                  ((MemberExpression)argument).Expression?.NodeType == ExpressionType.Constant))
             {
                 // For constants/variables, evaluate the IsNullOrWhiteSpace call and use the result
