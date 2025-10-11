@@ -47,7 +47,7 @@ internal static class NpgsqlDataSourceExtensions
     {
         try
         {
-            await using var conn = await dataSource.OpenConnectionAsync();
+            await using var conn = await dataSource.OpenConnectionAsync(token);
             await using var cmd = new NpgsqlCommand(context.Sql, conn);
             if (context.Parameters != null)
                 foreach (var parameter in context.Parameters)
