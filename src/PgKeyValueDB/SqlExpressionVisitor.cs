@@ -227,8 +227,21 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
         // Handle Any() for collections
         if (node.Method.Name == nameof(Enumerable.Any))
         {
+            // Any() without predicate: collection.Any() - check if array has elements
+            if (node.Arguments.Count == 1)
+            {
+                var collection = node.Arguments[0];
+                
+                if (collection is MemberExpression memberExpression)
+                {
+                    var parentPath = BuildNestedJsonPath(memberExpression);
+                    // Use CASE to safely check array length only when it's actually an array
+                    whereClause.Append($"(case when jsonb_typeof({parentPath}) = 'array' then jsonb_array_length({parentPath}) > 0 else false end)");
+                    return node;
+                }
+            }
             // Any() with predicate: collection.Any(x => x.Property == value)
-            if (node.Arguments.Count == 2 && node.Arguments[1] is LambdaExpression lambda)
+            else if (node.Arguments.Count == 2 && node.Arguments[1] is LambdaExpression lambda)
             {
                 var collection = node.Arguments[0];
                 

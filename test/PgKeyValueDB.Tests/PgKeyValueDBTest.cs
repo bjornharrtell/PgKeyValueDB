@@ -621,6 +621,134 @@ public class PgKeyValueDBTest
     }
 
     [TestMethod]
+    public async Task FilterByAnyWithoutPredicateTest()
+    {
+        var key1 = nameof(FilterByAnyWithoutPredicateTest) + "1";
+        var key2 = nameof(FilterByAnyWithoutPredicateTest) + "2";
+        var key3 = nameof(FilterByAnyWithoutPredicateTest) + "3";
+        var pid = nameof(FilterByAnyWithoutPredicateTest);
+
+        var user1 = new UserProfile
+        {
+            Name = "Alice",
+            Tags = ["vip", "early-adopter"]
+        };
+
+        var user2 = new UserProfile
+        {
+            Name = "Bob",
+            Tags = []
+        };
+
+        var user3 = new UserProfile
+        {
+            Name = "Charlie",
+            Tags = null
+        };
+
+        await kv.UpsertAsync(key1, user1, pid);
+        await kv.UpsertAsync(key2, user2, pid);
+        await kv.UpsertAsync(key3, user3, pid);
+
+        // This query should filter users who have any tags (excluding null and empty)
+        Expression<Func<UserProfile, bool>> expr = u => u.Tags!.Any();
+        var usersWithTags = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        Assert.HasCount(1, usersWithTags);
+        Assert.AreEqual("Alice", usersWithTags[0].Name);
+    }
+
+    [TestMethod]
+    public async Task FilterByAnyTagEqualsTest()
+    {
+        var key1 = nameof(FilterByAnyTagEqualsTest) + "1";
+        var key2 = nameof(FilterByAnyTagEqualsTest) + "2";
+        var pid = nameof(FilterByAnyTagEqualsTest);
+
+        var user1 = new UserProfile
+        {
+            Name = "Alice",
+            Tags = ["vip", "early-adopter"]
+        };
+
+        var user2 = new UserProfile
+        {
+            Name = "Bob",
+            Tags = ["regular", "new-user"]
+        };
+
+        await kv.UpsertAsync(key1, user1, pid);
+        await kv.UpsertAsync(key2, user2, pid);
+
+        // This query should filter users where any tag equals exactly "vip"
+        Expression<Func<UserProfile, bool>> expr = u => u.Tags!.Any(tag => tag == "vip");
+        var vipUsers = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        Assert.HasCount(1, vipUsers);
+        Assert.AreEqual("Alice", vipUsers[0].Name);
+    }
+
+    [TestMethod]
+    public async Task FilterByAnyTagContainsTest()
+    {
+        var key1 = nameof(FilterByAnyTagContainsTest) + "1";
+        var key2 = nameof(FilterByAnyTagContainsTest) + "2";
+        var pid = nameof(FilterByAnyTagContainsTest);
+
+        var user1 = new UserProfile
+        {
+            Name = "Alice",
+            Tags = ["super-vip", "early-adopter"]
+        };
+
+        var user2 = new UserProfile
+        {
+            Name = "Bob",
+            Tags = ["regular", "new-user"]
+        };
+
+        await kv.UpsertAsync(key1, user1, pid);
+        await kv.UpsertAsync(key2, user2, pid);
+
+        // This query should filter users where any tag contains "vip"
+        Expression<Func<UserProfile, bool>> expr = u => u.Tags!.Any(tag => tag.Contains("vip"));
+        var vipUsers = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        Assert.HasCount(1, vipUsers);
+        Assert.AreEqual("Alice", vipUsers[0].Name);
+    }
+
+    [TestMethod]
+    public async Task FilterByAnyTagEndsWithTest()
+    {
+        var key1 = nameof(FilterByAnyTagEndsWithTest) + "1";
+        var key2 = nameof(FilterByAnyTagEndsWithTest) + "2";
+        var pid = nameof(FilterByAnyTagEndsWithTest);
+
+        var user1 = new UserProfile
+        {
+            Name = "Alice",
+            Tags = ["member-vip", "early-adopter"]
+        };
+
+        var user2 = new UserProfile
+        {
+            Name = "Bob",
+            Tags = ["regular", "new-user"]
+        };
+
+        await kv.UpsertAsync(key1, user1, pid);
+        await kv.UpsertAsync(key2, user2, pid);
+
+        // This query should filter users where any tag ends with "vip"
+        Expression<Func<UserProfile, bool>> expr = u => u.Tags!.Any(tag => tag.EndsWith("vip"));
+        var vipUsers = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        Assert.HasCount(1, vipUsers);
+        Assert.AreEqual("Alice", vipUsers[0].Name);
+    }
+
+    [TestMethod]
     public async Task ComplexExpressionTest()
     {
         var key1 = nameof(ComplexExpressionTest) + "1";
