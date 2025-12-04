@@ -224,6 +224,109 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
             }
         }
 
+        // Handle Any() for collections
+        if (node.Method.Name == nameof(Enumerable.Any))
+        {
+            // Any() with predicate: collection.Any(x => x.Property == value)
+            if (node.Arguments.Count == 2 && node.Arguments[1] is LambdaExpression lambda)
+            {
+                var collection = node.Arguments[0];
+                
+                if (collection is MemberExpression memberExpression)
+                {
+                    var parentPath = BuildNestedJsonPath(memberExpression);
+                    
+                    // Extract the predicate condition
+                    var lambdaParam = lambda.Parameters[0];
+                    var lambdaBody = lambda.Body;
+                    
+                    // For simple string predicates like tag.StartsWith("vip")
+                    if (lambdaBody is MethodCallExpression methodCall)
+                    {
+                        if (methodCall.Method.Name == nameof(string.StartsWith) && 
+                            methodCall.Object is ParameterExpression)
+                        {
+                            // Get the prefix value
+                            var prefixValue = Expression.Lambda(methodCall.Arguments[0]).Compile().DynamicInvoke()?.ToString();
+                            
+                            whereClause.Append($"exists(select 1 from jsonb_array_elements_text({parentPath}) as elem where elem like ");
+                            
+                            parameterIndex++;
+                            var paramName = $"p{parameterIndex}";
+                            parameters.Add(new NpgsqlParameter
+                            {
+                                ParameterName = paramName,
+                                Value = $"{prefixValue}%",
+                                NpgsqlDbType = NpgsqlDbType.Text
+                            });
+                            whereClause.Append($"@{paramName})");
+                            return node;
+                        }
+                        else if (methodCall.Method.Name == nameof(string.Contains) && 
+                                 methodCall.Object is ParameterExpression)
+                        {
+                            // Get the search value
+                            var searchValue = Expression.Lambda(methodCall.Arguments[0]).Compile().DynamicInvoke()?.ToString();
+                            
+                            whereClause.Append($"exists(select 1 from jsonb_array_elements_text({parentPath}) as elem where elem like ");
+                            
+                            parameterIndex++;
+                            var paramName = $"p{parameterIndex}";
+                            parameters.Add(new NpgsqlParameter
+                            {
+                                ParameterName = paramName,
+                                Value = $"%{searchValue}%",
+                                NpgsqlDbType = NpgsqlDbType.Text
+                            });
+                            whereClause.Append($"@{paramName})");
+                            return node;
+                        }
+                        else if (methodCall.Method.Name == nameof(string.EndsWith) && 
+                                 methodCall.Object is ParameterExpression)
+                        {
+                            // Get the suffix value
+                            var suffixValue = Expression.Lambda(methodCall.Arguments[0]).Compile().DynamicInvoke()?.ToString();
+                            
+                            whereClause.Append($"exists(select 1 from jsonb_array_elements_text({parentPath}) as elem where elem like ");
+                            
+                            parameterIndex++;
+                            var paramName = $"p{parameterIndex}";
+                            parameters.Add(new NpgsqlParameter
+                            {
+                                ParameterName = paramName,
+                                Value = $"%{suffixValue}",
+                                NpgsqlDbType = NpgsqlDbType.Text
+                            });
+                            whereClause.Append($"@{paramName})");
+                            return node;
+                        }
+                    }
+                    else if (lambdaBody is BinaryExpression binaryExpr)
+                    {
+                        // For comparisons like tag == "vip"
+                        if (binaryExpr.NodeType == ExpressionType.Equal &&
+                            binaryExpr.Left is ParameterExpression)
+                        {
+                            var compareValue = Expression.Lambda(binaryExpr.Right).Compile().DynamicInvoke()?.ToString();
+                            
+                            whereClause.Append($"exists(select 1 from jsonb_array_elements_text({parentPath}) as elem where elem = ");
+                            
+                            parameterIndex++;
+                            var paramName = $"p{parameterIndex}";
+                            parameters.Add(new NpgsqlParameter
+                            {
+                                ParameterName = paramName,
+                                Value = compareValue,
+                                NpgsqlDbType = NpgsqlDbType.Text
+                            });
+                            whereClause.Append($"@{paramName})");
+                            return node;
+                        }
+                    }
+                }
+            }
+        }
+
         throw new NotSupportedException($"Method {node.Method.Name} is not supported");
     }
 

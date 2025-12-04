@@ -591,6 +591,36 @@ public class PgKeyValueDBTest
     }
 
     [TestMethod]
+    public async Task FilterByAnyTagTest()
+    {
+        var key1 = nameof(FilterByAnyTagTest) + "1";
+        var key2 = nameof(FilterByAnyTagTest) + "2";
+        var pid = nameof(FilterByAnyTagTest);
+
+        var user1 = new UserProfile
+        {
+            Name = "Alice",
+            Tags = ["vip", "early-adopter"]
+        };
+
+        var user2 = new UserProfile
+        {
+            Name = "Bob",
+            Tags = ["regular", "new-user"]
+        };
+
+        await kv.UpsertAsync(key1, user1, pid);
+        await kv.UpsertAsync(key2, user2, pid);
+
+        // This query should filter users where any tag starts with "vip"
+        Expression<Func<UserProfile, bool>> expr = u => u.Tags!.Any(tag => tag.StartsWith("vip"));
+        var vipUsers = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        Assert.HasCount(1, vipUsers);
+        Assert.AreEqual("Alice", vipUsers[0].Name);
+    }
+
+    [TestMethod]
     public async Task ComplexExpressionTest()
     {
         var key1 = nameof(ComplexExpressionTest) + "1";
