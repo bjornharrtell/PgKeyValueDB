@@ -15,6 +15,10 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
     private readonly Type documentType = documentType;
     private readonly JsonSerializerOptions jsonSerializerOptions = jsonSerializerOptions;
     private readonly JsonNamingPolicy propertyNamingPolicy = jsonSerializerOptions.PropertyNamingPolicy ?? JsonNamingPolicy.CamelCase;
+    
+    // Context for handling array element predicates in Any()
+    private ParameterExpression? arrayElementParameter;
+    private string? arrayElementAlias;
 
     public string WhereClause => whereClause.ToString();
     public NpgsqlParameter[] Parameters => [.. parameters];
@@ -239,8 +243,10 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
                     whereClause.Append($"(case when jsonb_typeof({parentPath}) = 'array' then jsonb_array_length({parentPath}) > 0 else false end)");
                     return node;
                 }
+                
+                throw new NotSupportedException($"Any() without predicate is only supported on member expressions. Expression type: {collection.NodeType}");
             }
-            // Any() with predicate: collection.Any(x => x.Property == value)
+            // Any() with predicate: collection.Any(x => <predicate>)
             else if (node.Arguments.Count == 2 && node.Arguments[1] is LambdaExpression lambda)
             {
                 var collection = node.Arguments[0];
@@ -249,95 +255,30 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
                 {
                     var parentPath = BuildNestedJsonPath(memberExpression);
                     
-                    // Extract the predicate condition
-                    var lambdaParam = lambda.Parameters[0];
-                    var lambdaBody = lambda.Body;
+                    // Save current context and set up array element context
+                    var previousArrayParam = arrayElementParameter;
+                    var previousArrayAlias = arrayElementAlias;
                     
-                    // For simple string predicates like tag.StartsWith("vip")
-                    if (lambdaBody is MethodCallExpression methodCall)
-                    {
-                        if (methodCall.Method.Name == nameof(string.StartsWith) && 
-                            methodCall.Object is ParameterExpression)
-                        {
-                            // Get the prefix value
-                            var prefixValue = Expression.Lambda(methodCall.Arguments[0]).Compile().DynamicInvoke()?.ToString();
-                            
-                            whereClause.Append($"exists(select 1 from jsonb_array_elements_text({parentPath}) as elem where elem like ");
-                            
-                            parameterIndex++;
-                            var paramName = $"p{parameterIndex}";
-                            parameters.Add(new NpgsqlParameter
-                            {
-                                ParameterName = paramName,
-                                Value = $"{prefixValue}%",
-                                NpgsqlDbType = NpgsqlDbType.Text
-                            });
-                            whereClause.Append($"@{paramName})");
-                            return node;
-                        }
-                        else if (methodCall.Method.Name == nameof(string.Contains) && 
-                                 methodCall.Object is ParameterExpression)
-                        {
-                            // Get the search value
-                            var searchValue = Expression.Lambda(methodCall.Arguments[0]).Compile().DynamicInvoke()?.ToString();
-                            
-                            whereClause.Append($"exists(select 1 from jsonb_array_elements_text({parentPath}) as elem where elem like ");
-                            
-                            parameterIndex++;
-                            var paramName = $"p{parameterIndex}";
-                            parameters.Add(new NpgsqlParameter
-                            {
-                                ParameterName = paramName,
-                                Value = $"%{searchValue}%",
-                                NpgsqlDbType = NpgsqlDbType.Text
-                            });
-                            whereClause.Append($"@{paramName})");
-                            return node;
-                        }
-                        else if (methodCall.Method.Name == nameof(string.EndsWith) && 
-                                 methodCall.Object is ParameterExpression)
-                        {
-                            // Get the suffix value
-                            var suffixValue = Expression.Lambda(methodCall.Arguments[0]).Compile().DynamicInvoke()?.ToString();
-                            
-                            whereClause.Append($"exists(select 1 from jsonb_array_elements_text({parentPath}) as elem where elem like ");
-                            
-                            parameterIndex++;
-                            var paramName = $"p{parameterIndex}";
-                            parameters.Add(new NpgsqlParameter
-                            {
-                                ParameterName = paramName,
-                                Value = $"%{suffixValue}",
-                                NpgsqlDbType = NpgsqlDbType.Text
-                            });
-                            whereClause.Append($"@{paramName})");
-                            return node;
-                        }
-                    }
-                    else if (lambdaBody is BinaryExpression binaryExpr)
-                    {
-                        // For comparisons like tag == "vip"
-                        if (binaryExpr.NodeType == ExpressionType.Equal &&
-                            binaryExpr.Left is ParameterExpression)
-                        {
-                            var compareValue = Expression.Lambda(binaryExpr.Right).Compile().DynamicInvoke()?.ToString();
-                            
-                            whereClause.Append($"exists(select 1 from jsonb_array_elements_text({parentPath}) as elem where elem = ");
-                            
-                            parameterIndex++;
-                            var paramName = $"p{parameterIndex}";
-                            parameters.Add(new NpgsqlParameter
-                            {
-                                ParameterName = paramName,
-                                Value = compareValue,
-                                NpgsqlDbType = NpgsqlDbType.Text
-                            });
-                            whereClause.Append($"@{paramName})");
-                            return node;
-                        }
-                    }
+                    arrayElementParameter = lambda.Parameters[0];
+                    arrayElementAlias = $"__elem{parameterIndex}";
+                    
+                    // Use jsonb_array_elements_text for simple types (strings, primitives)
+                    // The visitor will handle the lambda body and replace parameter references with the alias
+                    whereClause.Append($"exists(select 1 from jsonb_array_elements_text({parentPath}) as {arrayElementAlias} where ");
+                    Visit(lambda.Body);
+                    whereClause.Append(")");
+                    
+                    // Restore previous context
+                    arrayElementParameter = previousArrayParam;
+                    arrayElementAlias = previousArrayAlias;
+                    
+                    return node;
                 }
+                
+                throw new NotSupportedException($"Any() with predicate is only supported on member expressions. Expression type: {collection.NodeType}");
             }
+            
+            throw new NotSupportedException($"Any() with {node.Arguments.Count} arguments is not supported");
         }
 
         throw new NotSupportedException($"Method {node.Method.Name} is not supported");
@@ -604,6 +545,18 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
         }
 
         return base.VisitUnary(node);
+    }
+
+    protected override Expression VisitParameter(ParameterExpression node)
+    {
+        // Handle array element parameter references in Any() predicates
+        if (arrayElementParameter != null && node == arrayElementParameter)
+        {
+            whereClause.Append(arrayElementAlias);
+            return node;
+        }
+
+        return base.VisitParameter(node);
     }
 
     protected override Expression VisitConditional(ConditionalExpression node)
