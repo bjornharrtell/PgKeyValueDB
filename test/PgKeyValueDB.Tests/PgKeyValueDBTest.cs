@@ -85,6 +85,20 @@ public class Poco
     public string? Value { get; set; }
 }
 
+// Models to simulate upstream Party/Link patterns
+public class PartyLink
+{
+    public string? Name { get; set; }
+    public string? Type { get; set; }
+}
+
+public class Session
+{
+    public string? Id { get; set; }
+    public List<PartyLink>? DownPartyLinks { get; set; }
+    public List<PartyLink>? UpPartyLinks { get; set; }
+}
+
 [TestClass]
 public class PgKeyValueDBTest
 {
@@ -1129,5 +1143,169 @@ public class PgKeyValueDBTest
         // If the test passes, we expect to find the employee
         Assert.HasCount(1, users);
         Assert.AreEqual("alice@example.com", users[0].Email);
+    }
+
+    // Tests for upstream reported Any() issues with Where().Count() and Where().Any()
+    [TestMethod]
+    public async Task WhereCountTest()
+    {
+        var pid = nameof(WhereCountTest);
+        var key1 = pid + "1";
+        var key2 = pid + "2";
+        var key3 = pid + "3";
+
+        var session1 = new Session
+        {
+            Id = "session1",
+            DownPartyLinks = [
+                new PartyLink { Name = "party1", Type = "TypeA" },
+                new PartyLink { Name = "party2", Type = "TypeB" }
+            ]
+        };
+
+        var session2 = new Session
+        {
+            Id = "session2",
+            DownPartyLinks = [
+                new PartyLink { Name = "party3", Type = "TypeA" }
+            ]
+        };
+
+        var session3 = new Session
+        {
+            Id = "session3",
+            DownPartyLinks = []
+        };
+
+        await kv.UpsertAsync(key1, session1, pid);
+        await kv.UpsertAsync(key2, session2, pid);
+        await kv.UpsertAsync(key3, session3, pid);
+
+        // Test pattern from upstream: s.DownPartyLinks.Where(d => d.Name == downPartyName).Count() > 0
+        bool queryByDownPartyName = true;
+        string downPartyName = "party1";
+
+        Expression<Func<Session, bool>> expr = s =>
+            !queryByDownPartyName || (s.DownPartyLinks != null && s.DownPartyLinks.Where(d => d.Name == downPartyName).Count() > 0);
+
+        var sessions = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        // If the test passes, we expect to find session1 which has party1
+        Assert.HasCount(1, sessions);
+        Assert.AreEqual("session1", sessions[0].Id);
+    }
+
+    [TestMethod]
+    public async Task WhereAnyTest()
+    {
+        var pid = nameof(WhereAnyTest);
+        var key1 = pid + "1";
+        var key2 = pid + "2";
+        var key3 = pid + "3";
+
+        var session1 = new Session
+        {
+            Id = "session1",
+            UpPartyLinks = [
+                new PartyLink { Name = "upParty1", Type = "TypeA" },
+                new PartyLink { Name = "upParty2", Type = "TypeB" }
+            ]
+        };
+
+        var session2 = new Session
+        {
+            Id = "session2",
+            UpPartyLinks = [
+                new PartyLink { Name = "upParty3", Type = "TypeA" }
+            ]
+        };
+
+        var session3 = new Session
+        {
+            Id = "session3",
+            UpPartyLinks = []
+        };
+
+        await kv.UpsertAsync(key1, session1, pid);
+        await kv.UpsertAsync(key2, session2, pid);
+        await kv.UpsertAsync(key3, session3, pid);
+
+        // Test pattern from upstream: s.UpPartyLinks.Where(u => u.Name == upPartyName).Any()
+        bool queryByUpPartyName = true;
+        string upPartyName = "upParty1";
+
+        Expression<Func<Session, bool>> expr = s =>
+            !queryByUpPartyName || (s.UpPartyLinks != null && s.UpPartyLinks.Where(u => u.Name == upPartyName).Any());
+
+        var sessions = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        // If the test passes, we expect to find session1 which has upParty1
+        Assert.HasCount(1, sessions);
+        Assert.AreEqual("session1", sessions[0].Id);
+    }
+
+    [TestMethod]
+    public async Task CombinedUpstreamPatternsTest()
+    {
+        var pid = nameof(CombinedUpstreamPatternsTest);
+        var key1 = pid + "1";
+        var key2 = pid + "2";
+        var key3 = pid + "3";
+
+        var session1 = new Session
+        {
+            Id = "session1",
+            DownPartyLinks = [
+                new PartyLink { Name = "party1", Type = "TypeA" }
+            ],
+            UpPartyLinks = [
+                new PartyLink { Name = "upParty1", Type = "TypeX" }
+            ]
+        };
+
+        var session2 = new Session
+        {
+            Id = "session2",
+            DownPartyLinks = [
+                new PartyLink { Name = "party2", Type = "TypeB" }
+            ],
+            UpPartyLinks = [
+                new PartyLink { Name = "upParty2", Type = "TypeX" }
+            ]
+        };
+
+        var session3 = new Session
+        {
+            Id = "session3",
+            DownPartyLinks = [
+                new PartyLink { Name = "party1", Type = "TypeA" }
+            ],
+            UpPartyLinks = [
+                new PartyLink { Name = "upParty3", Type = "TypeY" }
+            ]
+        };
+
+        await kv.UpsertAsync(key1, session1, pid);
+        await kv.UpsertAsync(key2, session2, pid);
+        await kv.UpsertAsync(key3, session3, pid);
+
+        // Test the combined pattern from upstream with all three variations
+        bool queryByDownPartyName = true;
+        string downPartyName = "party1";
+        bool queryByUpPartyName = true;
+        string upPartyName = "upParty1";
+        bool queryByUpPartyType = true;
+        string upPartyType = "TypeX";
+
+        Expression<Func<Session, bool>> expr = s =>
+            (!queryByDownPartyName || (s.DownPartyLinks != null && s.DownPartyLinks.Where(d => d.Name == downPartyName).Count() > 0)) &&
+            (!queryByUpPartyName || (s.UpPartyLinks != null && s.UpPartyLinks.Where(u => u.Name == upPartyName).Any())) &&
+            (!queryByUpPartyType || (s.UpPartyLinks != null && s.UpPartyLinks.Any(u => u.Type == upPartyType)));
+
+        var sessions = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        // If the test passes, we expect to find session1 which matches all criteria
+        Assert.HasCount(1, sessions);
+        Assert.AreEqual("session1", sessions[0].Id);
     }
 }
