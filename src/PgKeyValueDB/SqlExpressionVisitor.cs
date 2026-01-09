@@ -254,152 +254,23 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
         if (node.Method.Name == nameof(Enumerable.Count))
         {
             var collection = node.Arguments[0];
-            
-            // Handle Where().Count() pattern
-            if (collection is MethodCallExpression whereCall && 
-                whereCall.Method.Name == nameof(Enumerable.Where) &&
-                whereCall.Arguments.Count == 2 &&
-                whereCall.Arguments[1] is LambdaExpression whereLambda)
-            {
-                // Extract the actual collection (before Where)
-                var actualCollection = whereCall.Arguments[0];
-                
-                if (actualCollection is MemberExpression memberExpression)
-                {
-                    var parentPath = BuildNestedJsonPath(memberExpression);
-                    
-                    // Save current context and set up array element context
-                    var previousArrayParam = arrayElementParameter;
-                    var previousArrayAlias = arrayElementAlias;
-                    
-                    arrayElementParameter = whereLambda.Parameters[0];
-                    arrayElementAlias = $"__elem{parameterIndex}";
-                    
-                    // Determine if we're dealing with simple types or complex objects
-                    var elementType = whereLambda.Parameters[0].Type;
-                    var isSimple = IsSimpleType(elementType);
-                    var arrayElementsFunc = isSimple ? "jsonb_array_elements_text" : "jsonb_array_elements";
-                    
-                    // Generate SQL: (select count(*) from jsonb_array_elements(...) where predicate)
-                    whereClause.Append($"(select count(*) from {arrayElementsFunc}({parentPath}) as {arrayElementAlias} where ");
-                    Visit(whereLambda.Body);
-                    whereClause.Append(")");
-                    
-                    // Restore previous context
-                    arrayElementParameter = previousArrayParam;
-                    arrayElementAlias = previousArrayAlias;
-                    
-                    return node;
-                }
-                
-                throw new NotSupportedException($"Where().Count() is only supported on member expressions. Expression type: {actualCollection.NodeType}");
-            }
-            
-            // Handle direct Count() on collection
-            if (collection is MemberExpression directMemberExpression)
-            {
-                var parentPath = BuildNestedJsonPath(directMemberExpression);
-                // Use CASE to safely check array length only when it's actually an array
-                whereClause.Append($"(case when jsonb_typeof({parentPath}) = 'array' then jsonb_array_length({parentPath}) else 0 end)");
-                return node;
-            }
-            
-            throw new NotSupportedException($"Count() is only supported on member expressions or Where() results. Expression type: {collection.NodeType}");
+            return HandleCollectionAggregateQuery(node, collection, null, "count(*)", "jsonb_array_length({0})", "0");
         }
 
         // Handle Any() for collections
         if (node.Method.Name == nameof(Enumerable.Any))
         {
-            // Any() without predicate: collection.Any() - check if array has elements
+            // Any() without predicate
             if (node.Arguments.Count == 1)
             {
                 var collection = node.Arguments[0];
-                
-                // Handle Where().Any() pattern
-                if (collection is MethodCallExpression whereCall && 
-                    whereCall.Method.Name == nameof(Enumerable.Where) &&
-                    whereCall.Arguments.Count == 2 &&
-                    whereCall.Arguments[1] is LambdaExpression whereLambda)
-                {
-                    // Extract the actual collection (before Where)
-                    var actualCollection = whereCall.Arguments[0];
-                    
-                    if (actualCollection is MemberExpression whereAnyMemberExpr)
-                    {
-                        var parentPath = BuildNestedJsonPath(whereAnyMemberExpr);
-                        
-                        // Save current context and set up array element context
-                        var previousArrayParam = arrayElementParameter;
-                        var previousArrayAlias = arrayElementAlias;
-                        
-                        arrayElementParameter = whereLambda.Parameters[0];
-                        arrayElementAlias = $"__elem{parameterIndex}";
-                        
-                        // Determine if we're dealing with simple types or complex objects
-                        var elementType = whereLambda.Parameters[0].Type;
-                        var isSimple = IsSimpleType(elementType);
-                        var arrayElementsFunc = isSimple ? "jsonb_array_elements_text" : "jsonb_array_elements";
-                        
-                        // Generate SQL: exists(select 1 from jsonb_array_elements(...) where predicate)
-                        whereClause.Append($"exists(select 1 from {arrayElementsFunc}({parentPath}) as {arrayElementAlias} where ");
-                        Visit(whereLambda.Body);
-                        whereClause.Append(")");
-                        
-                        // Restore previous context
-                        arrayElementParameter = previousArrayParam;
-                        arrayElementAlias = previousArrayAlias;
-                        
-                        return node;
-                    }
-                    
-                    throw new NotSupportedException($"Where().Any() is only supported on member expressions. Expression type: {actualCollection.NodeType}");
-                }
-                
-                // Handle direct Any() on member expression
-                if (collection is MemberExpression directAnyMemberExpr)
-                {
-                    var parentPath = BuildNestedJsonPath(directAnyMemberExpr);
-                    // Use CASE to safely check array length only when it's actually an array
-                    whereClause.Append($"(case when jsonb_typeof({parentPath}) = 'array' then jsonb_array_length({parentPath}) > 0 else false end)");
-                    return node;
-                }
-                
-                throw new NotSupportedException($"Any() without predicate is only supported on member expressions or Where() results. Expression type: {collection.NodeType}");
+                return HandleCollectionAggregateQuery(node, collection, null, "1", "jsonb_array_length({0}) > 0", "false", useExists: true);
             }
             // Any() with predicate: collection.Any(x => <predicate>)
             else if (node.Arguments.Count == 2 && node.Arguments[1] is LambdaExpression lambda)
             {
                 var collection = node.Arguments[0];
-                
-                if (collection is MemberExpression memberExpression)
-                {
-                    var parentPath = BuildNestedJsonPath(memberExpression);
-                    
-                    // Save current context and set up array element context
-                    var previousArrayParam = arrayElementParameter;
-                    var previousArrayAlias = arrayElementAlias;
-                    
-                    arrayElementParameter = lambda.Parameters[0];
-                    arrayElementAlias = $"__elem{parameterIndex}";
-                    
-                    // Determine if we're dealing with simple types or complex objects
-                    var elementType = lambda.Parameters[0].Type;
-                    var isSimple = IsSimpleType(elementType);
-                    var arrayElementsFunc = isSimple ? "jsonb_array_elements_text" : "jsonb_array_elements";
-                    
-                    // The visitor will handle the lambda body and replace parameter references with the alias
-                    whereClause.Append($"exists(select 1 from {arrayElementsFunc}({parentPath}) as {arrayElementAlias} where ");
-                    Visit(lambda.Body);
-                    whereClause.Append(")");
-                    
-                    // Restore previous context
-                    arrayElementParameter = previousArrayParam;
-                    arrayElementAlias = previousArrayAlias;
-                    
-                    return node;
-                }
-                
-                throw new NotSupportedException($"Any() with predicate is only supported on member expressions. Expression type: {collection.NodeType}");
+                return HandleCollectionAggregateQuery(node, collection, lambda, "1", null, null, useExists: true);
             }
             
             throw new NotSupportedException($"Any() with {node.Arguments.Count} arguments is not supported");
@@ -570,6 +441,102 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
             jsonPath = $"({jsonPath}->'{name}')";
         }
         return jsonPath;
+    }
+
+    /// <summary>
+    /// Handles collection aggregate queries like Count() and Any(), including Where().Count()/Any() patterns.
+    /// </summary>
+    /// <param name="node">The method call expression node</param>
+    /// <param name="collection">The collection expression to query</param>
+    /// <param name="predicate">Optional predicate lambda (for Any(x => ...) pattern)</param>
+    /// <param name="selectClause">What to select in the subquery (e.g., "count(*)" or "1")</param>
+    /// <param name="directCollectionSql">SQL template for direct collection access without predicate (e.g., "jsonb_array_length({0})")</param>
+    /// <param name="directCollectionElse">The else clause value when array is not actually an array</param>
+    /// <param name="useExists">Whether to wrap the subquery in exists()</param>
+    private Expression HandleCollectionAggregateQuery(
+        MethodCallExpression node, 
+        Expression collection, 
+        LambdaExpression? predicate,
+        string selectClause,
+        string? directCollectionSql,
+        string? directCollectionElse,
+        bool useExists = false)
+    {
+        // Handle Where().Count()/Any() pattern
+        if (collection is MethodCallExpression whereCall && 
+            whereCall.Method.Name == nameof(Enumerable.Where) &&
+            whereCall.Arguments.Count == 2 &&
+            whereCall.Arguments[1] is LambdaExpression whereLambda)
+        {
+            var actualCollection = whereCall.Arguments[0];
+            
+            if (actualCollection is MemberExpression memberExpression)
+            {
+                GenerateArraySubquery(memberExpression, whereLambda, selectClause, useExists);
+                return node;
+            }
+            
+            throw new NotSupportedException($"Where().{node.Method.Name}() is only supported on member expressions. Expression type: {actualCollection.NodeType}");
+        }
+        
+        // Handle direct collection query with predicate (e.g., Any(x => x.Value > 5))
+        if (predicate != null && collection is MemberExpression predicateMemberExpr)
+        {
+            GenerateArraySubquery(predicateMemberExpr, predicate, selectClause, useExists);
+            return node;
+        }
+        
+        // Handle direct collection query without predicate (e.g., Count() or Any())
+        if (predicate == null && collection is MemberExpression directMemberExpression)
+        {
+            if (directCollectionSql == null)
+                throw new InvalidOperationException("directCollectionSql must be provided for direct collection queries without predicate");
+                
+            var parentPath = BuildNestedJsonPath(directMemberExpression);
+            var sql = string.Format(directCollectionSql, parentPath);
+            whereClause.Append($"(case when jsonb_typeof({parentPath}) = 'array' then {sql} else {directCollectionElse} end)");
+            return node;
+        }
+        
+        throw new NotSupportedException($"{node.Method.Name}() is only supported on member expressions or Where() results. Expression type: {collection.NodeType}");
+    }
+
+    /// <summary>
+    /// Generates a subquery using jsonb_array_elements to filter and aggregate array elements.
+    /// </summary>
+    private void GenerateArraySubquery(MemberExpression memberExpression, LambdaExpression lambda, string selectClause, bool useExists)
+    {
+        var parentPath = BuildNestedJsonPath(memberExpression);
+        
+        // Save and set up array element context
+        var previousArrayParam = arrayElementParameter;
+        var previousArrayAlias = arrayElementAlias;
+        
+        arrayElementParameter = lambda.Parameters[0];
+        parameterIndex++;
+        arrayElementAlias = $"__elem{parameterIndex}";
+        
+        // Determine if we're dealing with simple types or complex objects
+        var elementType = lambda.Parameters[0].Type;
+        var isSimple = IsSimpleType(elementType);
+        var arrayElementsFunc = isSimple ? "jsonb_array_elements_text" : "jsonb_array_elements";
+        
+        // Generate SQL: [exists](select <selectClause> from jsonb_array_elements(...) where predicate)
+        // Note: for Count(), we wrap in parentheses; for Any()/exists(), the exists() itself provides grouping
+        if (useExists)
+        {
+            whereClause.Append($"exists(select {selectClause} from {arrayElementsFunc}({parentPath}) as {arrayElementAlias} where ");
+        }
+        else
+        {
+            whereClause.Append($"(select {selectClause} from {arrayElementsFunc}({parentPath}) as {arrayElementAlias} where ");
+        }
+        Visit(lambda.Body);
+        whereClause.Append(")");
+        
+        // Restore previous context
+        arrayElementParameter = previousArrayParam;
+        arrayElementAlias = previousArrayAlias;
     }
 
     protected override Expression VisitConstant(ConstantExpression node)
