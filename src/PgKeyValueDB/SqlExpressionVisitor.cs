@@ -27,6 +27,17 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
     {
         whereClause.Append('(');
 
+        // Special handling for null comparisons: convert == null to IS NULL and != null to IS NOT NULL
+        if ((node.NodeType == ExpressionType.Equal || node.NodeType == ExpressionType.NotEqual) &&
+            (IsNullConstant(node.Left) || IsNullConstant(node.Right)))
+        {
+            var nonNullSide = IsNullConstant(node.Left) ? node.Right : node.Left;
+            Visit(nonNullSide);
+            whereClause.Append(node.NodeType == ExpressionType.Equal ? " is null" : " is not null");
+            whereClause.Append(')');
+            return node;
+        }
+
         // Special case for direct boolean comparisons with constants
         if (node.NodeType == ExpressionType.Equal &&
             (node.Left.Type == typeof(bool) || node.Right.Type == typeof(bool)))
@@ -54,6 +65,11 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
 
         whereClause.Append(')');
         return node;
+    }
+
+    private static bool IsNullConstant(Expression expr)
+    {
+        return expr is ConstantExpression ce && ce.Value == null;
     }
 
     private static bool IsNumericType(Type type)

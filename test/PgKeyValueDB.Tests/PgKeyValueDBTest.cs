@@ -1185,6 +1185,41 @@ public class PgKeyValueDBTest
     }
 
     [TestMethod]
+    public async Task WhereCountWithNullCheckTest()
+    {
+        var pid = nameof(WhereCountWithNullCheckTest);
+        var key1 = pid + "1";
+        var key2 = pid + "2";
+
+        var session1 = new Session
+        {
+            Id = "session1",
+            DownPartyLinks = [
+                new PartyLink { Name = "party1", Type = "TypeA" }
+            ]
+        };
+
+        var session2 = new Session
+        {
+            Id = "session2",
+            DownPartyLinks = null
+        };
+
+        await kv.UpsertAsync(key1, session1, pid);
+        await kv.UpsertAsync(key2, session2, pid);
+
+        // Test with null check: s.DownPartyLinks != null && Count() > 0
+        string targetName = "party1";
+        Expression<Func<Session, bool>> expr = s => s.DownPartyLinks != null && s.DownPartyLinks.Where(d => d.Name == targetName).Count() > 0;
+
+        var sessions = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        // Should find session1 which has party1
+        Assert.HasCount(1, sessions);
+        Assert.AreEqual("session1", sessions[0].Id);
+    }
+
+    [TestMethod]
     public async Task WhereCountTest()
     {
         var pid = nameof(WhereCountTest);
