@@ -63,6 +63,12 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
                type == typeof(double) || type == typeof(float) || type == typeof(short);
     }
 
+    private static bool IsSimpleType(Type type)
+    {
+        type = Nullable.GetUnderlyingType(type) ?? type;
+        return type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal) || type == typeof(DateTime) || type == typeof(DateTimeOffset) || type == typeof(Guid);
+    }
+
     private static string GetOperator(ExpressionType nodeType) => nodeType switch
     {
         ExpressionType.Equal => " = ",
@@ -228,6 +234,63 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
             }
         }
 
+        // Handle Count() for collections
+        if (node.Method.Name == nameof(Enumerable.Count))
+        {
+            var collection = node.Arguments[0];
+            
+            // Handle Where().Count() pattern
+            if (collection is MethodCallExpression whereCall && 
+                whereCall.Method.Name == nameof(Enumerable.Where) &&
+                whereCall.Arguments.Count == 2 &&
+                whereCall.Arguments[1] is LambdaExpression whereLambda)
+            {
+                // Extract the actual collection (before Where)
+                var actualCollection = whereCall.Arguments[0];
+                
+                if (actualCollection is MemberExpression memberExpression)
+                {
+                    var parentPath = BuildNestedJsonPath(memberExpression);
+                    
+                    // Save current context and set up array element context
+                    var previousArrayParam = arrayElementParameter;
+                    var previousArrayAlias = arrayElementAlias;
+                    
+                    arrayElementParameter = whereLambda.Parameters[0];
+                    arrayElementAlias = $"__elem{parameterIndex}";
+                    
+                    // Determine if we're dealing with simple types or complex objects
+                    var elementType = whereLambda.Parameters[0].Type;
+                    var isSimple = IsSimpleType(elementType);
+                    var arrayElementsFunc = isSimple ? "jsonb_array_elements_text" : "jsonb_array_elements";
+                    
+                    // Generate SQL: (select count(*) from jsonb_array_elements(...) where predicate)
+                    whereClause.Append($"(select count(*) from {arrayElementsFunc}({parentPath}) as {arrayElementAlias} where ");
+                    Visit(whereLambda.Body);
+                    whereClause.Append(")");
+                    
+                    // Restore previous context
+                    arrayElementParameter = previousArrayParam;
+                    arrayElementAlias = previousArrayAlias;
+                    
+                    return node;
+                }
+                
+                throw new NotSupportedException($"Where().Count() is only supported on member expressions. Expression type: {actualCollection.NodeType}");
+            }
+            
+            // Handle direct Count() on collection
+            if (collection is MemberExpression directMemberExpression)
+            {
+                var parentPath = BuildNestedJsonPath(directMemberExpression);
+                // Use CASE to safely check array length only when it's actually an array
+                whereClause.Append($"(case when jsonb_typeof({parentPath}) = 'array' then jsonb_array_length({parentPath}) else 0 end)");
+                return node;
+            }
+            
+            throw new NotSupportedException($"Count() is only supported on member expressions or Where() results. Expression type: {collection.NodeType}");
+        }
+
         // Handle Any() for collections
         if (node.Method.Name == nameof(Enumerable.Any))
         {
@@ -236,15 +299,56 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
             {
                 var collection = node.Arguments[0];
                 
-                if (collection is MemberExpression memberExpression)
+                // Handle Where().Any() pattern
+                if (collection is MethodCallExpression whereCall && 
+                    whereCall.Method.Name == nameof(Enumerable.Where) &&
+                    whereCall.Arguments.Count == 2 &&
+                    whereCall.Arguments[1] is LambdaExpression whereLambda)
                 {
-                    var parentPath = BuildNestedJsonPath(memberExpression);
+                    // Extract the actual collection (before Where)
+                    var actualCollection = whereCall.Arguments[0];
+                    
+                    if (actualCollection is MemberExpression whereAnyMemberExpr)
+                    {
+                        var parentPath = BuildNestedJsonPath(whereAnyMemberExpr);
+                        
+                        // Save current context and set up array element context
+                        var previousArrayParam = arrayElementParameter;
+                        var previousArrayAlias = arrayElementAlias;
+                        
+                        arrayElementParameter = whereLambda.Parameters[0];
+                        arrayElementAlias = $"__elem{parameterIndex}";
+                        
+                        // Determine if we're dealing with simple types or complex objects
+                        var elementType = whereLambda.Parameters[0].Type;
+                        var isSimple = IsSimpleType(elementType);
+                        var arrayElementsFunc = isSimple ? "jsonb_array_elements_text" : "jsonb_array_elements";
+                        
+                        // Generate SQL: exists(select 1 from jsonb_array_elements(...) where predicate)
+                        whereClause.Append($"exists(select 1 from {arrayElementsFunc}({parentPath}) as {arrayElementAlias} where ");
+                        Visit(whereLambda.Body);
+                        whereClause.Append(")");
+                        
+                        // Restore previous context
+                        arrayElementParameter = previousArrayParam;
+                        arrayElementAlias = previousArrayAlias;
+                        
+                        return node;
+                    }
+                    
+                    throw new NotSupportedException($"Where().Any() is only supported on member expressions. Expression type: {actualCollection.NodeType}");
+                }
+                
+                // Handle direct Any() on member expression
+                if (collection is MemberExpression directAnyMemberExpr)
+                {
+                    var parentPath = BuildNestedJsonPath(directAnyMemberExpr);
                     // Use CASE to safely check array length only when it's actually an array
                     whereClause.Append($"(case when jsonb_typeof({parentPath}) = 'array' then jsonb_array_length({parentPath}) > 0 else false end)");
                     return node;
                 }
                 
-                throw new NotSupportedException($"Any() without predicate is only supported on member expressions. Expression type: {collection.NodeType}");
+                throw new NotSupportedException($"Any() without predicate is only supported on member expressions or Where() results. Expression type: {collection.NodeType}");
             }
             // Any() with predicate: collection.Any(x => <predicate>)
             else if (node.Arguments.Count == 2 && node.Arguments[1] is LambdaExpression lambda)
@@ -262,9 +366,13 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
                     arrayElementParameter = lambda.Parameters[0];
                     arrayElementAlias = $"__elem{parameterIndex}";
                     
-                    // Use jsonb_array_elements_text for simple types (strings, primitives)
+                    // Determine if we're dealing with simple types or complex objects
+                    var elementType = lambda.Parameters[0].Type;
+                    var isSimple = IsSimpleType(elementType);
+                    var arrayElementsFunc = isSimple ? "jsonb_array_elements_text" : "jsonb_array_elements";
+                    
                     // The visitor will handle the lambda body and replace parameter references with the alias
-                    whereClause.Append($"exists(select 1 from jsonb_array_elements_text({parentPath}) as {arrayElementAlias} where ");
+                    whereClause.Append($"exists(select 1 from {arrayElementsFunc}({parentPath}) as {arrayElementAlias} where ");
                     Visit(lambda.Body);
                     whereClause.Append(")");
                     
@@ -312,7 +420,14 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
             cast = "::text";
         }
         var name = propertyNamingPolicy.ConvertName(member.Name);
-        if (parentPath != "value")
+        
+        // Check if parentPath is an array element alias (starts with __elem)
+        if (parentPath.StartsWith("__elem"))
+        {
+            // For array elements from jsonb_array_elements, use ->> operator directly on the alias
+            return $"({parentPath}->>'{name}'){cast}";
+        }
+        else if (parentPath != "value")
         {
             return $"({parentPath}->>'{name}'){cast}";
         }
@@ -385,6 +500,13 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
         // Handle root-level properties in the JSON document
         if (node.Expression?.NodeType == ExpressionType.Parameter)
         {
+            // Check if this is accessing a property on an array element parameter
+            if (arrayElementParameter != null && node.Expression == arrayElementParameter)
+            {
+                whereClause.Append(BuildJsonPath(node.Member, arrayElementAlias!));
+                return node;
+            }
+            
             whereClause.Append(BuildJsonPath(node.Member));
             return node;
         }

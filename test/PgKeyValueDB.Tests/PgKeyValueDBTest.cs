@@ -1147,6 +1147,44 @@ public class PgKeyValueDBTest
 
     // Tests for upstream reported Any() issues with Where().Count() and Where().Any()
     [TestMethod]
+    public async Task SimpleWhereCountTest()
+    {
+        var pid = nameof(SimpleWhereCountTest);
+        var key1 = pid + "1";
+        var key2 = pid + "2";
+
+        var session1 = new Session
+        {
+            Id = "session1",
+            DownPartyLinks = [
+                new PartyLink { Name = "party1", Type = "TypeA" },
+                new PartyLink { Name = "party2", Type = "TypeB" }
+            ]
+        };
+
+        var session2 = new Session
+        {
+            Id = "session2",
+            DownPartyLinks = [
+                new PartyLink { Name = "party3", Type = "TypeA" }
+            ]
+        };
+
+        await kv.UpsertAsync(key1, session1, pid);
+        await kv.UpsertAsync(key2, session2, pid);
+
+        // Simple test: just check if Where().Count() > 0 works
+        string targetName = "party1";
+        Expression<Func<Session, bool>> expr = s => s.DownPartyLinks!.Where(d => d.Name == targetName).Count() > 0;
+
+        var sessions = await kv.GetListAsync(pid, expr).ToListAsync();
+
+        // Should find session1 which has party1
+        Assert.HasCount(1, sessions);
+        Assert.AreEqual("session1", sessions[0].Id);
+    }
+
+    [TestMethod]
     public async Task WhereCountTest()
     {
         var pid = nameof(WhereCountTest);
