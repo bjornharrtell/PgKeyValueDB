@@ -7,7 +7,6 @@
     <RootNamespace>Wololo.PgKeyValueDB.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
     <EnableMicrosoftTestingExtensionsCodeCoverage>true</EnableMicrosoftTestingExtensionsCodeCoverage>
-    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
 
   <ItemGroup>
