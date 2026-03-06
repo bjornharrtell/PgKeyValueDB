@@ -151,7 +151,8 @@ public class PgKeyValueDBTest
     public static void ClassInit(TestContext context)
     {
         IServiceCollection services = new ServiceCollection();
-        pg = new PgServer("16.2.0", clearWorkingDirOnStart: true, clearInstanceDirOnStop: true);
+        var pgVersion = Environment.GetEnvironmentVariable("PG_VERSION") ?? "18.3.0";
+        pg = new PgServer(pgVersion, clearWorkingDirOnStart: true, clearInstanceDirOnStop: true);
         pg.Start();
         services.AddPgKeyValueDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres", b =>
         {
