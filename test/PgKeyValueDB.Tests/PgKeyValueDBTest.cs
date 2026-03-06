@@ -141,6 +141,28 @@ public class ScheduledItem
     public DateTime? ScheduledAt { get; set; }
 }
 
+public class Deep3
+{
+    public string? Value { get; set; }
+}
+
+public class Deep2
+{
+    public Deep3? Inner { get; set; }
+}
+
+public class Deep1
+{
+    public string? Name { get; set; }
+    public Deep2? Middle { get; set; }
+}
+
+public class ModelWithGuid
+{
+    public string? Name { get; set; }
+    public Guid ExternalId { get; set; }
+}
+
 [TestClass]
 public class PgKeyValueDBTest
 {
@@ -1769,5 +1791,88 @@ public class PgKeyValueDBTest
         var future = await kv.GetListAsync<ScheduledItem>(pid, m => m.ScheduledAt > cutoff).ToListAsync();
         Assert.HasCount(1, future);
         Assert.AreEqual("future", future[0].Name);
+    }
+
+    // Covers lines 374-377: closure-captured object whose property is accessed as a nested member
+    [TestMethod]
+    public async Task ClosureObjectPropertyFilterTest()
+    {
+        var pid = nameof(ClosureObjectPropertyFilterTest);
+        await kv.UpsertAsync(pid + "1", new Poco { Value = "alpha" }, pid);
+        await kv.UpsertAsync(pid + "2", new Poco { Value = "beta" }, pid);
+
+        // filter.Value is a MemberAccess on a Constant (closure), hitting the
+        // parentMember.Expression?.NodeType == ExpressionType.Constant path in VisitMember
+        var filter = new Poco { Value = "alpha" };
+        var result = await kv.GetListAsync<Poco>(pid, p => p.Value == filter.Value).ToListAsync();
+        Assert.HasCount(1, result);
+        Assert.AreEqual("alpha", result[0].Value);
+    }
+
+    // Covers lines 426-432: triple-nested property traversal in BuildNestedJsonPath
+    [TestMethod]
+    public async Task TripleNestedPropertyTest()
+    {
+        var pid = nameof(TripleNestedPropertyTest);
+        var item1 = new Deep1 { Name = "found", Middle = new Deep2 { Inner = new Deep3 { Value = "deep-val" } } };
+        var item2 = new Deep1 { Name = "other", Middle = new Deep2 { Inner = new Deep3 { Value = "different" } } };
+        await kv.UpsertAsync(pid + "1", item1, pid);
+        await kv.UpsertAsync(pid + "2", item2, pid);
+
+        // u.Middle.Inner.Value requires BuildNestedJsonPath to traverse 3 levels,
+        // hitting the else-if(MemberExpression parent) branch for the intermediate level
+        var result = await kv.GetListAsync<Deep1>(pid, u => u.Middle!.Inner!.Value == "deep-val").ToListAsync();
+        Assert.HasCount(1, result);
+        Assert.AreEqual("found", result[0].Name);
+    }
+
+    // Covers line 623: GetNpgsqlType Guid branch
+    [TestMethod]
+    public async Task GuidFilterTest()
+    {
+        var pid = nameof(GuidFilterTest);
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        await kv.UpsertAsync(pid + "1", new ModelWithGuid { Name = "first", ExternalId = id1 }, pid);
+        await kv.UpsertAsync(pid + "2", new ModelWithGuid { Name = "second", ExternalId = id2 }, pid);
+
+        // Closure Guid triggers GetNpgsqlType(typeof(Guid)) → NpgsqlDbType.Uuid
+        var result = await kv.GetListAsync<ModelWithGuid>(pid, m => m.ExternalId == id1).ToListAsync();
+        Assert.HasCount(1, result);
+        Assert.AreEqual("first", result[0].Name);
+    }
+
+    // Covers line 627: GetNpgsqlType Int16 (Smallint) branch
+    [TestMethod]
+    public async Task ShortClosureVariableTest()
+    {
+        var pid = nameof(ShortClosureVariableTest);
+        var item1 = new TypedModel { Name = "low", ShortVal = 5 };
+        var item2 = new TypedModel { Name = "high", ShortVal = 20 };
+        await kv.UpsertAsync(pid + "1", item1, pid);
+        await kv.UpsertAsync(pid + "2", item2, pid);
+
+        // A short closure variable makes AddParameter receive typeof(short),
+        // flowing through GetNpgsqlType → TypeCode.Int16 → NpgsqlDbType.Smallint
+        short threshold = 10;
+        var result = await kv.GetListAsync<TypedModel>(pid, m => m.ShortVal > threshold).ToListAsync();
+        Assert.HasCount(1, result);
+        Assert.AreEqual("high", result[0].Name);
+    }
+
+    // Covers line 633: GetNpgsqlType Boolean branch via the null-value code path
+    [TestMethod]
+    public async Task NullNullableBoolClosureTest()
+    {
+        var pid = nameof(NullNullableBoolClosureTest);
+        await kv.UpsertAsync(pid + "1", new UserProfile { Name = "Alice", IsVerified = true }, pid);
+        await kv.UpsertAsync(pid + "2", new UserProfile { Name = "Bob", IsVerified = false }, pid);
+
+        // A null bool? closure variable causes AddParameter(null, typeof(bool?)) →
+        // null path → GetNpgsqlType(bool?) → strips nullable → TypeCode.Boolean
+        bool? filter = null;
+        // SQL: col = NULL → always NULL → no rows returned
+        var result = await kv.GetListAsync<UserProfile>(pid, u => u.IsVerified == filter).ToListAsync();
+        Assert.IsEmpty(result);
     }
 }

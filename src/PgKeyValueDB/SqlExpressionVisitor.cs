@@ -300,6 +300,10 @@ public class SqlExpressionVisitor(JsonSerializerOptions jsonSerializerOptions) :
         {
             cast = "::bool";
         }
+        else if (memberType == typeof(Guid) || memberType == typeof(Guid?))
+        {
+            cast = "::uuid";
+        }
         else
         {
             cast = "::text";
@@ -433,7 +437,7 @@ public class SqlExpressionVisitor(JsonSerializerOptions jsonSerializerOptions) :
         }
 
         var jsonPath = "value";
-        foreach (var segment in path.Reverse())
+        foreach (var segment in path)
         {
             var name = propertyNamingPolicy.ConvertName(segment);
             jsonPath = $"({jsonPath}->'{name}')";
