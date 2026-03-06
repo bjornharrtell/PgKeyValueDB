@@ -99,6 +99,48 @@ public class Session
     public List<PartyLink>? UpPartyLinks { get; set; }
 }
 
+public class TypedModel
+{
+    public string? Name { get; set; }
+    public short ShortVal { get; set; }
+    public long LongVal { get; set; }
+    public decimal DecimalVal { get; set; }
+    public double DoubleVal { get; set; }
+    public float FloatVal { get; set; }
+    public DateTimeOffset? CreatedAt { get; set; }
+}
+
+public class ModelWithBool
+{
+    public string? Name { get; set; }
+    public bool IsActive { get; set; }
+}
+
+public class ModelWithField
+{
+    [System.Text.Json.Serialization.JsonInclude]
+    public string? Name;
+    [System.Text.Json.Serialization.JsonInclude]
+    public int Value;
+}
+
+public class InnerItem
+{
+    public int? Score { get; set; }
+}
+
+public class OuterItem
+{
+    public string? Name { get; set; }
+    public InnerItem? Details { get; set; }
+}
+
+public class ScheduledItem
+{
+    public string? Name { get; set; }
+    public DateTime? ScheduledAt { get; set; }
+}
+
 [TestClass]
 public class PgKeyValueDBTest
 {
@@ -1380,5 +1422,351 @@ public class PgKeyValueDBTest
         // If the test passes, we expect to find session1 which matches all criteria
         Assert.HasCount(1, sessions);
         Assert.AreEqual("session1", sessions[0].Id);
+    }
+
+    [TestMethod]
+    public void ExistsTest()
+    {
+        var key = nameof(ExistsTest);
+        var pid = nameof(ExistsTest);
+        Assert.IsFalse(kv.Exists(key, pid));
+        kv.Upsert(key, new Poco { Value = key }, pid);
+        Assert.IsTrue(kv.Exists(key, pid));
+    }
+
+    [TestMethod]
+    public async Task ExistsAsyncTest()
+    {
+        var key = nameof(ExistsAsyncTest);
+        var pid = nameof(ExistsAsyncTest);
+        Assert.IsFalse(await kv.ExistsAsync(key, pid));
+        await kv.UpsertAsync(key, new Poco { Value = key }, pid);
+        Assert.IsTrue(await kv.ExistsAsync(key, pid));
+        // Expired item should not exist
+        await kv.UpsertAsync(key, new Poco { Value = key }, pid, DateTimeOffset.UtcNow.AddMinutes(-1));
+        Assert.IsFalse(await kv.ExistsAsync(key, pid));
+    }
+
+    [TestMethod]
+    public async Task GetAsyncTest()
+    {
+        var key = nameof(GetAsyncTest);
+        var pid = nameof(GetAsyncTest);
+        var missing = await kv.GetAsync<Poco>(key, pid);
+        Assert.IsNull(missing);
+        await kv.UpsertAsync(key, new Poco { Value = key }, pid);
+        var result = await kv.GetAsync<Poco>(key, pid);
+        Assert.AreEqual(key, result?.Value);
+    }
+
+    [TestMethod]
+    public async Task CreateAsyncTest()
+    {
+        var key = nameof(CreateAsyncTest);
+        var pid = nameof(CreateAsyncTest);
+        var ok = await kv.CreateAsync(key, new Poco { Value = key }, pid);
+        Assert.IsTrue(ok);
+        var notok = await kv.CreateAsync(key, new Poco { Value = key }, pid);
+        Assert.IsFalse(notok);
+    }
+
+    [TestMethod]
+    public async Task UpdateAsyncTest()
+    {
+        var key = nameof(UpdateAsyncTest);
+        var pid = nameof(UpdateAsyncTest);
+        // Update non-existing returns false
+        var notok = await kv.UpdateAsync(key, new Poco { Value = "old" }, pid);
+        Assert.IsFalse(notok);
+        await kv.UpsertAsync(key, new Poco { Value = "old" }, pid);
+        var ok = await kv.UpdateAsync(key, new Poco { Value = "new" }, pid);
+        Assert.IsTrue(ok);
+        var result = await kv.GetAsync<Poco>(key, pid);
+        Assert.AreEqual("new", result?.Value);
+    }
+
+    [TestMethod]
+    public async Task RemoveAsyncTest()
+    {
+        var key = nameof(RemoveAsyncTest);
+        var pid = nameof(RemoveAsyncTest);
+        // Remove non-existing returns false
+        Assert.IsFalse(await kv.RemoveAsync(key, pid));
+        await kv.UpsertAsync(key, new Poco { Value = key }, pid);
+        Assert.IsTrue(await kv.RemoveAsync(key, pid));
+        Assert.IsFalse(await kv.ExistsAsync(key, pid));
+    }
+
+    [TestMethod]
+    public async Task CountAsyncBasicTest()
+    {
+        var key1 = nameof(CountAsyncBasicTest) + "1";
+        var key2 = nameof(CountAsyncBasicTest) + "2";
+        var pid = nameof(CountAsyncBasicTest);
+        await kv.UpsertAsync(key1, new Poco { Value = key1 }, pid);
+        await kv.UpsertAsync(key2, new Poco { Value = key2 }, pid);
+        var count = await kv.CountAsync(pid);
+        Assert.AreEqual(2, count);
+    }
+
+    [TestMethod]
+    public async Task RemoveAllAsyncBasicTest()
+    {
+        var key1 = nameof(RemoveAllAsyncBasicTest) + "1";
+        var key2 = nameof(RemoveAllAsyncBasicTest) + "2";
+        var pid = nameof(RemoveAllAsyncBasicTest);
+        await kv.UpsertAsync(key1, new Poco { Value = key1 }, pid);
+        await kv.UpsertAsync(key2, new Poco { Value = key2 }, pid);
+        var removed = await kv.RemoveAllAsync(pid);
+        Assert.AreEqual(2, removed);
+        Assert.AreEqual(0, await kv.CountAsync(pid));
+    }
+
+    [TestMethod]
+    public async Task RemoveAllExpiredAsyncTest()
+    {
+        var key = nameof(RemoveAllExpiredAsyncTest);
+        var pid = nameof(RemoveAllExpiredAsyncTest);
+        await kv.UpsertAsync(key, new Poco { Value = key }, pid);
+        var removed1 = await kv.RemoveAllExpiredAsync(pid);
+        Assert.AreEqual(0, removed1);
+        await kv.UpsertAsync(key, new Poco { Value = key }, pid, DateTimeOffset.UtcNow.AddMinutes(-1));
+        var removed2 = await kv.RemoveAllExpiredAsync(pid);
+        Assert.AreEqual(1, removed2);
+    }
+
+    [TestMethod]
+    public async Task RemoveAllExpiredGlobalAsyncTest()
+    {
+        var key = nameof(RemoveAllExpiredGlobalAsyncTest);
+        var pid = nameof(RemoveAllExpiredGlobalAsyncTest);
+        // Non-expired item should survive a global cleanup
+        await kv.UpsertAsync(key, new Poco { Value = key }, pid);
+        await kv.RemoveAllExpiredGlobalAsync();
+        Assert.AreEqual(1, await kv.CountAsync(pid));
+        // Expired item should be removed by global cleanup
+        await kv.UpsertAsync(key, new Poco { Value = key }, pid, DateTimeOffset.UtcNow.AddMinutes(-1));
+        await kv.RemoveAllExpiredGlobalAsync();
+        Assert.AreEqual(0, await kv.CountAsync(pid));
+    }
+
+    [TestMethod]
+    public async Task GreaterThanOrEqualOperatorTest()
+    {
+        var pid = nameof(GreaterThanOrEqualOperatorTest);
+        await kv.UpsertAsync(pid + "1", new UserProfile { Name = "A", Age = 20 }, pid);
+        await kv.UpsertAsync(pid + "2", new UserProfile { Name = "B", Age = 30 }, pid);
+        await kv.UpsertAsync(pid + "3", new UserProfile { Name = "C", Age = 40 }, pid);
+
+        var ge30 = await kv.GetListAsync<UserProfile>(pid, u => u.Age >= 30).ToListAsync();
+        Assert.HasCount(2, ge30);
+
+        var le30 = await kv.GetListAsync<UserProfile>(pid, u => u.Age <= 30).ToListAsync();
+        Assert.HasCount(2, le30);
+
+        var between = await kv.GetListAsync<UserProfile>(pid, u => u.Age >= 25 && u.Age <= 35).ToListAsync();
+        Assert.HasCount(1, between);
+        Assert.AreEqual("B", between[0].Name);
+    }
+
+    [TestMethod]
+    public async Task NumericTypeFilterTest()
+    {
+        var pid = nameof(NumericTypeFilterTest);
+        var item1 = new TypedModel { Name = "item1", ShortVal = 10, LongVal = 1000L, DecimalVal = 9.99m, DoubleVal = 1.5, FloatVal = 2.5f };
+        var item2 = new TypedModel { Name = "item2", ShortVal = 20, LongVal = 2000L, DecimalVal = 19.99m, DoubleVal = 3.5, FloatVal = 4.5f };
+        await kv.UpsertAsync(pid + "1", item1, pid);
+        await kv.UpsertAsync(pid + "2", item2, pid);
+
+        var byShort = await kv.GetListAsync<TypedModel>(pid, m => m.ShortVal >= 15).ToListAsync();
+        Assert.HasCount(1, byShort);
+        Assert.AreEqual("item2", byShort[0].Name);
+
+        var byLong = await kv.GetListAsync<TypedModel>(pid, m => m.LongVal <= 1500L).ToListAsync();
+        Assert.HasCount(1, byLong);
+        Assert.AreEqual("item1", byLong[0].Name);
+
+        var byDecimal = await kv.GetListAsync<TypedModel>(pid, m => m.DecimalVal > 15m).ToListAsync();
+        Assert.HasCount(1, byDecimal);
+        Assert.AreEqual("item2", byDecimal[0].Name);
+
+        var byDouble = await kv.GetListAsync<TypedModel>(pid, m => m.DoubleVal > 2.0).ToListAsync();
+        Assert.HasCount(1, byDouble);
+        Assert.AreEqual("item2", byDouble[0].Name);
+
+        var byFloat = await kv.GetListAsync<TypedModel>(pid, m => m.FloatVal > 3.0f).ToListAsync();
+        Assert.HasCount(1, byFloat);
+        Assert.AreEqual("item2", byFloat[0].Name);
+    }
+
+    [TestMethod]
+    public async Task DateTimeOffsetFilterTest()
+    {
+        var pid = nameof(DateTimeOffsetFilterTest);
+        var now = DateTimeOffset.UtcNow;
+        var item1 = new TypedModel { Name = "old", CreatedAt = now.AddDays(-10) };
+        var item2 = new TypedModel { Name = "new", CreatedAt = now.AddDays(-1) };
+        await kv.UpsertAsync(pid + "1", item1, pid);
+        await kv.UpsertAsync(pid + "2", item2, pid);
+
+        var cutoff = now.AddDays(-5);
+        var recent = await kv.GetListAsync<TypedModel>(pid, m => m.CreatedAt > cutoff).ToListAsync();
+        Assert.HasCount(1, recent);
+        Assert.AreEqual("new", recent[0].Name);
+    }
+
+    [TestMethod]
+    public async Task NonNullableBoolPropertyTest()
+    {
+        var pid = nameof(NonNullableBoolPropertyTest);
+        await kv.UpsertAsync(pid + "1", new ModelWithBool { Name = "active", IsActive = true }, pid);
+        await kv.UpsertAsync(pid + "2", new ModelWithBool { Name = "inactive", IsActive = false }, pid);
+
+        // Property on left (member == constant) - first branch in VisitBinary bool case
+        var active = await kv.GetListAsync<ModelWithBool>(pid, m => m.IsActive == true).ToListAsync();
+        Assert.HasCount(1, active);
+        Assert.AreEqual("active", active[0].Name);
+
+        // Constant on left (constant == member) - else branch in VisitBinary bool case
+        var alsoActive = await kv.GetListAsync<ModelWithBool>(pid, m => true == m.IsActive).ToListAsync();
+        Assert.HasCount(1, alsoActive);
+        Assert.AreEqual("active", alsoActive[0].Name);
+
+        // Inactive items
+        var inactive = await kv.GetListAsync<ModelWithBool>(pid, m => m.IsActive == false).ToListAsync();
+        Assert.HasCount(1, inactive);
+        Assert.AreEqual("inactive", inactive[0].Name);
+    }
+
+    [TestMethod]
+    public async Task NullCapturedVariableTest()
+    {
+        var pid = nameof(NullCapturedVariableTest);
+        await kv.UpsertAsync(pid + "1", new Poco { Value = "something" }, pid);
+        string? nullFilter = null;
+        // Null captured variable — AddParameter called with null value
+        var result = await kv.GetListAsync<Poco>(pid, p => p.Value == nullFilter).ToListAsync();
+        Assert.IsEmpty(result);
+    }
+
+    [TestMethod]
+    public async Task FieldAccessTest()
+    {
+        var pid = nameof(FieldAccessTest);
+        await kv.UpsertAsync(pid + "1", new ModelWithField { Name = "alpha", Value = 1 }, pid);
+        await kv.UpsertAsync(pid + "2", new ModelWithField { Name = "beta", Value = 2 }, pid);
+
+        // Accessing public fields triggers FieldInfo path in GetMemberType
+        var result = await kv.GetListAsync<ModelWithField>(pid, m => m.Name == "alpha").ToListAsync();
+        Assert.HasCount(1, result);
+        Assert.AreEqual("alpha", result[0].Name);
+
+        var byValue = await kv.GetListAsync<ModelWithField>(pid, m => m.Value > 1).ToListAsync();
+        Assert.HasCount(1, byValue);
+        Assert.AreEqual("beta", byValue[0].Name);
+    }
+
+    [TestMethod]
+    public async Task ToLowerToUpperFilterTest()
+    {
+        var pid = nameof(ToLowerToUpperFilterTest);
+        await kv.UpsertAsync(pid + "1", new Poco { Value = "Hello" }, pid);
+        await kv.UpsertAsync(pid + "2", new Poco { Value = "World" }, pid);
+
+        var lower = await kv.GetListAsync<Poco>(pid, p => p.Value!.ToLower() == "hello").ToListAsync();
+        Assert.HasCount(1, lower);
+
+        var upper = await kv.GetListAsync<Poco>(pid, p => p.Value!.ToUpper() == "WORLD").ToListAsync();
+        Assert.HasCount(1, upper);
+    }
+
+    [TestMethod]
+    public async Task EndsWithFilterTest()
+    {
+        var pid = nameof(EndsWithFilterTest);
+        await kv.UpsertAsync(pid + "1", new Poco { Value = "foobar" }, pid);
+        await kv.UpsertAsync(pid + "2", new Poco { Value = "bazqux" }, pid);
+
+        var result = await kv.GetListAsync<Poco>(pid, p => p.Value!.EndsWith("bar")).ToListAsync();
+        Assert.HasCount(1, result);
+        Assert.AreEqual("foobar", result[0].Value);
+    }
+
+    [TestMethod]
+    public async Task NestedPropertyHasValueTest()
+    {
+        var pid = nameof(NestedPropertyHasValueTest);
+        var user1 = new UserProfile { Name = "Alice", PrimaryAddress = new Address { ZipCode = 10001 } };
+        var user2 = new UserProfile { Name = "Bob", PrimaryAddress = null };
+        await kv.UpsertAsync(pid + "1", user1, pid);
+        await kv.UpsertAsync(pid + "2", user2, pid);
+
+        // Test null check on nested property (not HasValue, just null check)
+        var withAddress = await kv.GetListAsync<UserProfile>(pid, u => u.PrimaryAddress != null).ToListAsync();
+        Assert.HasCount(1, withAddress);
+        Assert.AreEqual("Alice", withAddress[0].Name);
+    }
+
+    [TestMethod]
+    public async Task CountWithTagsTest()
+    {
+        var pid = nameof(CountWithTagsTest);
+        var user1 = new UserProfile { Name = "Alice", Tags = ["vip", "user"] };
+        var user2 = new UserProfile { Name = "Bob", Tags = ["user"] };
+        var user3 = new UserProfile { Name = "Charlie", Tags = [] };
+        await kv.UpsertAsync(pid + "1", user1, pid);
+        await kv.UpsertAsync(pid + "2", user2, pid);
+        await kv.UpsertAsync(pid + "3", user3, pid);
+
+        // Count() on collection via LINQ
+        var withVip = await kv.GetListAsync<UserProfile>(pid, u => u.Tags!.Count() > 1).ToListAsync();
+        Assert.HasCount(1, withVip);
+        Assert.AreEqual("Alice", withVip[0].Name);
+    }
+
+    [TestMethod]
+    public async Task ClosureNullableHasValueTest()
+    {
+        var pid = nameof(ClosureNullableHasValueTest);
+        await kv.UpsertAsync(pid + "1", new Poco { Value = "a" }, pid);
+        await kv.UpsertAsync(pid + "2", new Poco { Value = "b" }, pid);
+
+        // Closure nullable with value — HasValue evaluates to true, all records match
+        int? withValue = 5;
+        var all = await kv.GetListAsync<Poco>(pid, p => withValue.HasValue).ToListAsync();
+        Assert.HasCount(2, all);
+
+        // Closure nullable without value — HasValue evaluates to false, no records match
+        int? withoutValue = null;
+        var none = await kv.GetListAsync<Poco>(pid, p => withoutValue.HasValue).ToListAsync();
+        Assert.IsEmpty(none);
+    }
+
+    [TestMethod]
+    public async Task NestedNullableHasValueTest()
+    {
+        var pid = nameof(NestedNullableHasValueTest);
+        await kv.UpsertAsync(pid + "1", new OuterItem { Name = "has-score", Details = new InnerItem { Score = 42 } }, pid);
+        await kv.UpsertAsync(pid + "2", new OuterItem { Name = "no-score", Details = new InnerItem { Score = null } }, pid);
+        await kv.UpsertAsync(pid + "3", new OuterItem { Name = "no-details", Details = null }, pid);
+
+        // Details.Score.HasValue — nested nullable property HasValue check
+        var withScore = await kv.GetListAsync<OuterItem>(pid, m => m.Details != null && m.Details.Score.HasValue).ToListAsync();
+        Assert.HasCount(1, withScore);
+        Assert.AreEqual("has-score", withScore[0].Name);
+    }
+
+    [TestMethod]
+    public async Task DateTimeFieldFilterTest()
+    {
+        var pid = nameof(DateTimeFieldFilterTest);
+        var now = DateTime.UtcNow;
+        await kv.UpsertAsync(pid + "1", new ScheduledItem { Name = "past", ScheduledAt = now.AddDays(-2) }, pid);
+        await kv.UpsertAsync(pid + "2", new ScheduledItem { Name = "future", ScheduledAt = now.AddDays(2) }, pid);
+
+        DateTime cutoff = now;
+        var future = await kv.GetListAsync<ScheduledItem>(pid, m => m.ScheduledAt > cutoff).ToListAsync();
+        Assert.HasCount(1, future);
+        Assert.AreEqual("future", future[0].Name);
     }
 }

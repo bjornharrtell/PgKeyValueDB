@@ -7,13 +7,11 @@ using NpgsqlTypes;
 
 namespace Wololo.PgKeyValueDB;
 
-public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonSerializerOptions) : ExpressionVisitor
+public class SqlExpressionVisitor(JsonSerializerOptions jsonSerializerOptions) : ExpressionVisitor
 {
     private readonly List<NpgsqlParameter> parameters = [];
     private readonly StringBuilder whereClause = new();
     private int parameterIndex;
-    private readonly Type documentType = documentType;
-    private readonly JsonSerializerOptions jsonSerializerOptions = jsonSerializerOptions;
     private readonly JsonNamingPolicy propertyNamingPolicy = jsonSerializerOptions.PropertyNamingPolicy ?? JsonNamingPolicy.CamelCase;
     
     // Context for handling array element predicates in Any()
@@ -123,7 +121,7 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
             {
                 // For property access on the entity, generate the JSON path check
                 // This handles cases like string.IsNullOrWhiteSpace(u.SomeProperty)
-                whereClause.Append("(");
+                whereClause.Append('(');
                 Visit(argument);
                 whereClause.Append(" is null or trim(");
                 Visit(argument);
@@ -215,21 +213,13 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
                 case nameof(string.ToLower):
                     whereClause.Append("lower(");
                     Visit(node.Object);
-                    whereClause.Append(")");
+                    whereClause.Append(')');
                     return node;
 
                 case nameof(string.ToUpper):
                     whereClause.Append("upper(");
                     Visit(node.Object);
-                    whereClause.Append(")");
-                    return node;
-
-                case nameof(string.IsNullOrWhiteSpace):
-                    whereClause.Append("(");
-                    Visit(node.Arguments[0]);
-                    whereClause.Append(" is null or trim(");
-                    Visit(node.Arguments[0]);
-                    whereClause.Append(") = '')");
+                    whereClause.Append(')');
                     return node;
             }
         }
@@ -297,6 +287,14 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
                 Type t when t == typeof(long) => "::bigint",
                 _ => "::integer"
             };
+        }
+        else if (memberType == typeof(DateTimeOffset) || memberType == typeof(DateTimeOffset?))
+        {
+            cast = "::timestamptz";
+        }
+        else if (memberType == typeof(DateTime) || memberType == typeof(DateTime?))
+        {
+            cast = "::timestamptz";
         }
         else if (memberType == typeof(bool) || memberType == typeof(bool?))
         {
@@ -545,12 +543,6 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
         return node;
     }
 
-    private static bool IsToStringCall(Expression expr)
-    {
-        return expr is MethodCallExpression methodCall &&
-               methodCall.Method.Name == nameof(ToString);
-    }
-
     private void AddParameter(object? value, Type type)
     {
         parameterIndex++;
@@ -624,6 +616,12 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
         if (type.IsEnum)
             return NpgsqlDbType.Text;
 
+        if (type == typeof(DateTimeOffset))
+            return NpgsqlDbType.TimestampTz;
+
+        if (type == typeof(Guid))
+            return NpgsqlDbType.Uuid;
+
         return Type.GetTypeCode(type) switch
         {
             TypeCode.Int16 => NpgsqlDbType.Smallint,
@@ -634,7 +632,7 @@ public class SqlExpressionVisitor(Type documentType, JsonSerializerOptions jsonS
             TypeCode.Single => NpgsqlDbType.Real,
             TypeCode.Boolean => NpgsqlDbType.Boolean,
             TypeCode.String => NpgsqlDbType.Text,
-            TypeCode.DateTime => NpgsqlDbType.Timestamp,
+            TypeCode.DateTime => NpgsqlDbType.TimestampTz,
             _ => NpgsqlDbType.Text
         };
     }

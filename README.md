@@ -1,6 +1,7 @@
 # PgKeyValueDB
 
 ![NuGet Version](https://img.shields.io/nuget/v/PgKeyValueDB)
+[![Coverage Status](https://coveralls.io/repos/github/bjornharrtell/PgKeyValueDB/badge.svg?branch=main)](https://coveralls.io/github/bjornharrtell/PgKeyValueDB?branch=main)
 
 ## Introduction
 

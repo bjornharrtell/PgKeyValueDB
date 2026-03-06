@@ -128,7 +128,7 @@ public class PgKeyValueDB
         var baseParams = new List<NpgsqlParameter> { new() { ParameterName = "pid", Value = pid } };
         if (where != null)
         {
-            var visitor = new SqlExpressionVisitor(typeof(T), JsonSerializerOptions);
+            var visitor = new SqlExpressionVisitor(JsonSerializerOptions);
             visitor.Visit(where);
             baseParams.AddRange(visitor.Parameters);
             sql = $"{sql} and {visitor.WhereClause}";
@@ -147,7 +147,7 @@ public class PgKeyValueDB
         };
         if (where != null)
         {
-            var visitor = new SqlExpressionVisitor(typeof(T), JsonSerializerOptions);
+            var visitor = new SqlExpressionVisitor(JsonSerializerOptions);
             visitor.Visit(where);
             baseParams.AddRange(visitor.Parameters);
             sql = $"{sql} and {visitor.WhereClause} limit @limit offset @offset";
