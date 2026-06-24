@@ -27,6 +27,14 @@ Additional API a `GetListAsync`, `Count` and `RemoveAll` with Linq expression fi
 
 ## FAQ
 
+### Running tests
+
+Requires Docker. Run the full test suite self-contained:
+
+```sh
+docker compose --profile test up --abort-on-container-exit --exit-code-from test
+```
+
 ### What about distributed/concurrent usage?
 
 Should be no different from standard PostgreSQL behaviour i.e https://www.postgresql.org/docs/current/transaction-iso.html.
