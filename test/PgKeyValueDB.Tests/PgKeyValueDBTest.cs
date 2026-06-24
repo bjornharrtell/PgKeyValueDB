@@ -1,6 +1,6 @@
 using System.Linq.Expressions;
 using Microsoft.Extensions.DependencyInjection;
-using MysticMind.PostgresEmbed;
+using Npgsql;
 
 [assembly: Parallelize]
 
@@ -166,30 +166,36 @@ public class ModelWithGuid
 [TestClass]
 public class PgKeyValueDBTest
 {
-    private static PgServer pg = null!;
     private static PgKeyValueDB kv = null!;
 
     [ClassInitialize]
     public static void ClassInit(TestContext context)
     {
-        IServiceCollection services = new ServiceCollection();
-        var pgVersion = Environment.GetEnvironmentVariable("PG_VERSION") ?? "18.3.0";
-        pg = new PgServer(pgVersion, clearWorkingDirOnStart: true, clearInstanceDirOnStop: true);
-        pg.Start();
-        services.AddPgKeyValueDB($"Host=localhost;Port={pg.PgPort};Username=postgres;Password=postgres;Database=postgres", b =>
+        var connectionString = Environment.GetEnvironmentVariable("CONNECTION_STRING")
+            ?? "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=postgres";
+        for (var attempt = 1; ; attempt++)
         {
-            b.SchemaName = "pgkeyvaluetest";
-            b.TableName = "pgkeyvaluetest";
-        });
-        var serviceProvider = services.BuildServiceProvider();
-        kv = serviceProvider.GetRequiredService<PgKeyValueDB>();
-    }
-
-    [ClassCleanup()]
-    public static void ClassCleanup()
-    {
-        pg?.Stop();
-        pg?.Dispose();
+            try
+            {
+                using (var conn = new NpgsqlConnection(connectionString))
+                {
+                    conn.Open();
+                    new NpgsqlCommand("DROP SCHEMA IF EXISTS pgkeyvaluetest CASCADE", conn).ExecuteNonQuery();
+                }
+                IServiceCollection services = new ServiceCollection();
+                services.AddPgKeyValueDB(connectionString, b =>
+                {
+                    b.SchemaName = "pgkeyvaluetest";
+                    b.TableName = "pgkeyvaluetest";
+                });
+                kv = services.BuildServiceProvider().GetRequiredService<PgKeyValueDB>();
+                return;
+            }
+            catch (Exception) when (attempt < 10)
+            {
+                Thread.Sleep(2000);
+            }
+        }
     }
 
     [TestMethod]

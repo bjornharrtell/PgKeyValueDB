@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  test:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CONNECTION_STRING: "Host=postgres;Port=5432;Username=postgres;Password=postgres;Database=postgres"
+    volumes:
+      - .:/app
+      - /app/src/PgKeyValueDB/bin
+      - /app/src/PgKeyValueDB/obj
+      - /app/test/PgKeyValueDB.Tests/bin
+      - /app/test/PgKeyValueDB.Tests/obj
+      - nuget-cache:/root/.nuget/packages
+    working_dir: /app
+    command: dotnet test -v q -- --no-progress
+    profiles:
+      - test
+
+volumes:
+  nuget-cache:
